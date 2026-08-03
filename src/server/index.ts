@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, eq, gte, like, lte, or, sql } from "drizzle-orm";
-import { candles, predictions, stocks } from "./db/schema";
+import { candles, predictionLog, predictions, stocks } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
@@ -103,6 +103,36 @@ app.get("/api/rankings", async (c) => {
     .limit(limit);
 
   return c.json({ items: rows, budget, sort, limit });
+});
+
+app.get("/api/backtest", async (c) => {
+  const db = drizzle(c.env.DB);
+  const modelName = c.req.query("model") ?? "lstm_v1";
+
+  const byHorizon = await db
+    .select({
+      horizonDays: predictionLog.horizonDays,
+      n: sql<number>`COUNT(*)`,
+      maePct: sql<number>`AVG(ABS(${predictionLog.errorPct}))`,
+      rmsePct: sql<number>`SQRT(AVG(${predictionLog.errorPct} * ${predictionLog.errorPct}))`,
+      hitPct: sql<number>`AVG(${predictionLog.directionHit}) * 100`,
+      biasPct: sql<number>`AVG(${predictionLog.errorPct})`,
+    })
+    .from(predictionLog)
+    .where(eq(predictionLog.modelName, modelName))
+    .groupBy(predictionLog.horizonDays)
+    .orderBy(asc(predictionLog.horizonDays));
+
+  const [meta] = await db
+    .select({
+      rows: sql<number>`COUNT(*)`,
+      stocks: sql<number>`COUNT(DISTINCT ${predictionLog.code})`,
+      runDates: sql<number>`COUNT(DISTINCT ${predictionLog.runDate})`,
+    })
+    .from(predictionLog)
+    .where(eq(predictionLog.modelName, modelName));
+
+  return c.json({ model: modelName, meta, byHorizon });
 });
 
 export default app;

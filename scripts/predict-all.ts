@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import * as tf from "@tensorflow/tfjs";
@@ -17,6 +17,7 @@ const { values } = parseArgs({
     chunk: { type: "string", default: "200" },
     out: { type: "string", default: "data/seed_predictions.sql" },
     apply: { type: "boolean", default: false },
+    remote: { type: "boolean", default: false },
   },
 });
 
@@ -33,7 +34,10 @@ const findSqlitePath = (): string => {
   const dir = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
   const files = readdirSync(dir).filter((f) => f.endsWith(".sqlite"));
   if (!files.length) throw new Error(`no sqlite file in ${dir}`);
-  return `${dir}/${files[0]}`;
+  // 複数ある場合はサイズ最大 = データが入っているものを選ぶ
+  const withSize = files.map((f) => ({ f, size: statSync(`${dir}/${f}`).size }));
+  withSize.sort((a, b) => b.size - a.size);
+  return `${dir}/${withSize[0].f}`;
 };
 
 const toYyyymmdd = (d: Date): number =>
@@ -121,9 +125,10 @@ const writeSql = (rows: PredictionRow[]) => {
 };
 
 const applySql = () => {
+  const remoteFlag = values.remote ? "--remote" : "--local";
   const res = spawnSync(
     "bunx",
-    ["wrangler", "d1", "execute", DB_NAME, "--local", "--file", OUT_PATH],
+    ["wrangler", "d1", "execute", DB_NAME, remoteFlag, "--file", OUT_PATH],
     { encoding: "utf8", stdio: "inherit", maxBuffer: 256 * 1024 * 1024 },
   );
   if (res.status !== 0) throw new Error("apply failed");
@@ -136,7 +141,7 @@ const main = async () => {
 
   const sqlitePath = findSqlitePath();
   console.log(`sqlite: ${sqlitePath}`);
-  const db = new Database(sqlitePath, { readonly: true });
+  const db = new Database(sqlitePath);
 
   const requestedCodes = values.codes
     ? values.codes.split(",").map((s) => s.trim()).filter(Boolean)

@@ -57,3 +57,25 @@ export const predictions = sqliteTable(
 );
 
 export type Prediction = typeof predictions.$inferSelect;
+
+export const predictionLog = sqliteTable(
+  "prediction_log",
+  {
+    code: text("code").notNull(),
+    runDate: integer("run_date").notNull(),
+    horizonDays: integer("horizon_days").notNull(),
+    modelName: text("model_name").notNull(),
+    lastClose: real("last_close").notNull(),
+    predictedClose: real("predicted_close").notNull(),
+    actualClose: real("actual_close"),
+    errorPct: real("error_pct"),
+    directionHit: integer("direction_hit"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.code, t.runDate, t.horizonDays, t.modelName] }),
+    horizonIdx: index("prediction_log_horizon_idx").on(t.horizonDays, t.modelName),
+    runDateIdx: index("prediction_log_run_date_idx").on(t.runDate),
+  }),
+);
+
+export type PredictionLog = typeof predictionLog.$inferSelect;

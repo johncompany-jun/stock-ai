@@ -70,6 +70,36 @@ const rankings = ref<Ranking[]>([]);
 const rankingsLoading = ref(false);
 const rankingsRunAt = ref<number | null>(null);
 
+type BacktestHorizon = {
+  horizonDays: number;
+  n: number;
+  maePct: number;
+  rmsePct: number;
+  hitPct: number;
+  biasPct: number;
+};
+type BacktestResponse = {
+  model: string;
+  meta: { rows: number; stocks: number; runDates: number };
+  byHorizon: BacktestHorizon[];
+};
+const backtest = ref<BacktestResponse | null>(null);
+const backtestLoading = ref(false);
+const backtestError = ref<string | null>(null);
+const fetchBacktest = async () => {
+  backtestLoading.value = true;
+  backtestError.value = null;
+  try {
+    const r = await fetch("/api/backtest");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    backtest.value = (await r.json()) as BacktestResponse;
+  } catch (e) {
+    backtestError.value = String(e);
+  } finally {
+    backtestLoading.value = false;
+  }
+};
+
 let rankSeq = 0;
 const fetchRankings = async () => {
   const my = ++rankSeq;
@@ -310,6 +340,7 @@ onMounted(async () => {
   };
 
   fetchRankings();
+  fetchBacktest();
 });
 
 watch([budget, sortMode], () => fetchRankings());
@@ -411,6 +442,54 @@ const expectedProfit = computed(() => {
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section class="backtest-panel">
+      <header class="backtest-header">
+        <h2>バックテスト精度 <span class="backtest-tag">検証中</span></h2>
+        <span v-if="backtest?.meta" class="backtest-meta">
+          {{ backtest.meta.rows.toLocaleString() }} 予測 / {{ backtest.meta.stocks }} 銘柄 /
+          {{ backtest.meta.runDates }} 日付
+        </span>
+      </header>
+      <div v-if="backtestLoading" class="ranking-msg">読み込み中...</div>
+      <div v-else-if="backtestError" class="ranking-msg">エラー: {{ backtestError }}</div>
+      <div v-else-if="!backtest?.byHorizon.length" class="ranking-msg">
+        まだバックテスト結果がありません。
+      </div>
+      <table v-else class="backtest-table">
+        <thead>
+          <tr>
+            <th>予測期間</th>
+            <th class="num">サンプル数</th>
+            <th class="num">MAE%</th>
+            <th class="num">RMSE%</th>
+            <th class="num">方向的中率</th>
+            <th class="num">偏り</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="h in backtest.byHorizon" :key="h.horizonDays">
+            <td>{{ h.horizonDays }} 営業日後</td>
+            <td class="num">{{ h.n }}</td>
+            <td class="num">{{ h.maePct.toFixed(2) }}</td>
+            <td class="num">{{ h.rmsePct.toFixed(2) }}</td>
+            <td
+              class="num"
+              :class="h.hitPct >= 55 ? 'up' : h.hitPct < 50 ? 'down' : ''"
+            >
+              {{ h.hitPct.toFixed(1) }}%
+            </td>
+            <td class="num" :class="h.biasPct >= 0 ? 'up' : 'down'">
+              {{ h.biasPct >= 0 ? "+" : "" }}{{ h.biasPct.toFixed(2) }}%
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="backtest-legend">
+        MAE% = 平均絶対誤差 / RMSE% = 二乗平均平方根誤差 / 方向的中率 = 上下方向を当てた割合
+        (50% = ランダム、55%以上で意味あり) / 偏り = 予測が上下どちらに偏っているか
+      </p>
     </section>
 
     <section v-if="selected" ref="chartPanel" class="chart-panel">
@@ -803,5 +882,60 @@ tbody tr.active {
 }
 .ranking-table tbody tr.active {
   background: #e0ecff;
+}
+.backtest-panel {
+  border: 1px solid #d4dae2;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: #fff;
+}
+.backtest-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.backtest-header h2 {
+  font-size: 1rem;
+  margin: 0;
+  font-weight: 600;
+}
+.backtest-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.7rem;
+  font-weight: 500;
+  vertical-align: middle;
+}
+.backtest-meta {
+  color: #666;
+  font-size: 0.75rem;
+}
+.backtest-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.backtest-table th,
+.backtest-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+.backtest-table th {
+  background: #f7f7f7;
+  text-align: left;
+}
+.backtest-legend {
+  margin: 0.6rem 0 0;
+  color: #666;
+  font-size: 0.72rem;
+  line-height: 1.5;
 }
 </style>
