@@ -12,7 +12,7 @@ const { values } = parseArgs({
     remote: { type: "boolean", default: false },
     full: { type: "boolean", default: false },
     limit: { type: "string" },
-    out: { type: "string", default: "drizzle/seed_candles.sql" },
+    out: { type: "string", default: "data/seed_candles.sql" },
     apply: { type: "boolean", default: false },
   },
 });

@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 const CSV_PATH = resolve(process.cwd(), "screener_result.csv");
-const OUT_PATH = resolve(process.cwd(), "drizzle/seed_stocks.sql");
+const OUT_PATH = resolve(process.cwd(), "data/seed_stocks.sql");
 
 const sqlEscape = (s: string) => s.replace(/'/g, "''");
 

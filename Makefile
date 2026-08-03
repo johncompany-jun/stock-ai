@@ -58,7 +58,7 @@ db-migrate: ## ローカル D1 にマイグレーションを適用
 
 db-import: ## CSV から SQL 生成→ローカル D1 に流し込み
 	$(COMPOSE) exec $(SERVICE) bun run scripts/import-stocks.ts
-	$(COMPOSE) exec $(SERVICE) bunx wrangler d1 execute stock-ai --local --file=./drizzle/seed_stocks.sql
+	$(COMPOSE) exec $(SERVICE) bunx wrangler d1 execute stock-ai --local --file=./data/seed_stocks.sql
 
 db-reset: ## ローカル D1 をリセット (マイグレーション再適用→再インポート)
 	$(COMPOSE) exec $(SERVICE) rm -rf .wrangler/state/v3/d1

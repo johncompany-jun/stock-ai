@@ -15,7 +15,7 @@ const { values } = parseArgs({
     units: { type: "string", default: "16" },
     days: { type: "string", default: "365" },
     chunk: { type: "string", default: "200" },
-    out: { type: "string", default: "drizzle/seed_predictions.sql" },
+    out: { type: "string", default: "data/seed_predictions.sql" },
     apply: { type: "boolean", default: false },
   },
 });
