@@ -1,0 +1,37 @@
+name: Daily candles update
+
+on:
+  schedule:
+    # JST 01:00 = UTC 16:00 (東証大引け 15:00 JST + 反映余裕)
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-candles
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Fetch daily candles (diff mode) and apply to remote D1
+        run: bun run scripts/fetch-candles.ts --remote --apply
+
+      - name: Summary
+        if: always()
+        run: |
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT COUNT(DISTINCT code) AS codes, COUNT(*) AS rows, MAX(date) AS latest FROM candles"
