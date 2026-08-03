@@ -1,0 +1,11 @@
+node_modules
+.git
+.gitignore
+Makefile
+README.md
+*.log
+.DS_Store
+.env
+.env.*
+dist
+.wrangler
