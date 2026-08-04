@@ -47,6 +47,14 @@ jobs:
           --days 365 --chunk 200
           --apply --remote
 
+      - name: Predict (Volume breakout) all stocks and apply to remote D1
+        run: >
+          bun run scripts/predict-all.ts
+          --model volume_breakout_v1
+          --sourceUrl "$SOURCE_URL"
+          --days 365 --chunk 200
+          --apply --remote
+
       - name: Summary
         if: always()
         run: |
