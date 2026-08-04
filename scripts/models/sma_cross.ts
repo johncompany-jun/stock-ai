@@ -17,7 +17,7 @@ export const createSmaCrossModel = (opts: SmaCrossOptions = {}): ModelDef => {
   const LONG = opts.long ?? 25;
   const MAX_ABS_RETURN = opts.maxAbsReturnPct ?? 10;
 
-  const predict = async (closes: number[], horizon: number): Promise<number[]> => {
+  const predict = async (closes: number[], _volumes: number[], horizon: number): Promise<number[]> => {
     const n = closes.length;
     const lastIdx = n - 1;
     const smaShort = sma(closes, SHORT, lastIdx);

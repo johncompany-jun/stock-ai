@@ -66,6 +66,8 @@ type Ranking = {
   predictionsByModel: Record<string, number | null>;
   agreement: number;
   agreementTotal: number;
+  returnStdevPct: number;
+  confidence: number;
 };
 
 const BUDGET_PRESETS = [50000, 100000, 300000, 500000];
@@ -88,19 +90,30 @@ type BacktestResponse = {
   meta: { rows: number; stocks: number; runDates: number };
   byHorizon: BacktestHorizon[];
 };
+type AgreementBucket = {
+  horizonDays: number;
+  agreement: number;
+  agreementTotal: number;
+  n: number;
+  hitPct: number;
+};
+type AgreementResponse = { model: string; buckets: AgreementBucket[] };
 const MODEL_OPTIONS: Array<{ key: string; label: string; shortLabel: string }> = [
   { key: "lstm_v1", label: "LSTM (深層学習)", shortLabel: "LSTM" },
   { key: "sma_cross_v1", label: "SMAクロス (移動平均)", shortLabel: "SMA" },
   { key: "rsi_reversal_v1", label: "RSI逆張り", shortLabel: "RSI" },
+  { key: "volume_breakout_v1", label: "出来高ブレイク", shortLabel: "VOL" },
 ];
 const selectedModel = ref<string>("lstm_v1");
 const AGREEMENT_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 0, label: "全て" },
-  { value: 2, label: "2/3以上" },
-  { value: 3, label: "3/3のみ" },
+  { value: 2, label: "2以上" },
+  { value: 3, label: "3以上" },
+  { value: 4, label: "4のみ" },
 ];
 const minAgreement = ref<number>(0);
 const backtest = ref<BacktestResponse | null>(null);
+const agreement = ref<AgreementResponse | null>(null);
 const backtestLoading = ref(false);
 const backtestError = ref<string | null>(null);
 let backtestSeq = 0;
@@ -110,17 +123,35 @@ const fetchBacktest = async () => {
   backtestError.value = null;
   try {
     const params = new URLSearchParams({ model: selectedModel.value });
-    const r = await fetch(`/api/backtest?${params}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const j = (await r.json()) as BacktestResponse;
+    const [r1, r2] = await Promise.all([
+      fetch(`/api/backtest?${params}`),
+      fetch(`/api/backtest-agreement?${params}`),
+    ]);
+    if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
+    const j1 = (await r1.json()) as BacktestResponse;
+    const j2 = r2.ok ? ((await r2.json()) as AgreementResponse) : null;
     if (my !== backtestSeq) return;
-    backtest.value = j;
+    backtest.value = j1;
+    agreement.value = j2;
   } catch (e) {
     if (my === backtestSeq) backtestError.value = String(e);
   } finally {
     if (my === backtestSeq) backtestLoading.value = false;
   }
 };
+
+const agreementByHorizon = computed(() => {
+  const buckets = agreement.value?.buckets ?? [];
+  const map = new Map<number, AgreementBucket[]>();
+  for (const b of buckets) {
+    const arr = map.get(b.horizonDays) ?? [];
+    arr.push(b);
+    map.set(b.horizonDays, arr);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([horizon, rows]) => ({ horizon, rows }));
+});
 
 let rankSeq = 0;
 const fetchRankings = async () => {
@@ -157,6 +188,12 @@ const selectRanking = (r: Ranking) => {
 
 const fmtYen = (n: number) => `${Math.round(n).toLocaleString()}円`;
 const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+const confidenceTier = (c: number): string => {
+  if (c >= 80) return "conf-high";
+  if (c >= 60) return "conf-mid";
+  if (c >= 40) return "conf-low";
+  return "conf-none";
+};
 const fmtRunAt = (t: number | null) => {
   if (!t) return "";
   const d = new Date(t * 1000);
@@ -465,7 +502,7 @@ const expectedProfit = computed(() => {
             <th class="num">予測値</th>
             <th class="num">リターン</th>
             <th class="num">利益(円)</th>
-            <th class="num" title="選択モデルと同じ方向を予測したモデル数 / 全モデル数">
+            <th class="num" title="方向一致数と予測値のばらつきから算出 (0-100)。同じ数字でも予測値がバラけていれば低くなる">
               信頼度
             </th>
           </tr>
@@ -489,8 +526,13 @@ const expectedProfit = computed(() => {
             <td class="num" :class="r.expectedProfitYen >= 0 ? 'up' : 'down'">
               {{ fmtYen(r.expectedProfitYen) }}
             </td>
-            <td class="num agreement" :class="`agree-${r.agreement}`">
-              {{ r.agreement }}/{{ r.agreementTotal }}
+            <td
+              class="num agreement"
+              :class="confidenceTier(r.confidence)"
+              :title="`${r.agreement}/${r.agreementTotal} モデル一致 · 予測ばらつき ${r.returnStdevPct.toFixed(1)}%`"
+            >
+              {{ r.confidence }}
+              <span class="agreement-sub">{{ r.agreement }}/{{ r.agreementTotal }}</span>
             </td>
           </tr>
         </tbody>
@@ -551,6 +593,44 @@ const expectedProfit = computed(() => {
         MAE% = 平均絶対誤差 / RMSE% = 二乗平均平方根誤差 / 方向的中率 = 上下方向を当てた割合
         (50% = ランダム、55%以上で意味あり) / 偏り = 予測が上下どちらに偏っているか
       </p>
+
+      <div v-if="agreementByHorizon.length" class="agreement-report">
+        <h3>信頼度別 実測勝率</h3>
+        <p class="agreement-note">
+          選択モデルと他モデルで方向が一致した数(N/M)ごとに、実際の方向的中率を集計。
+          一致数が多いほど勝率が高ければ、合議に意味があるということ。
+        </p>
+        <div class="agreement-groups">
+          <div
+            v-for="g in agreementByHorizon"
+            :key="g.horizon"
+            class="agreement-group"
+          >
+            <h4>{{ g.horizon }} 営業日後</h4>
+            <table class="agreement-report-table">
+              <thead>
+                <tr>
+                  <th>一致数</th>
+                  <th class="num">サンプル</th>
+                  <th class="num">実勝率</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="b in g.rows" :key="b.agreement">
+                  <td>{{ b.agreement }}/{{ b.agreementTotal }}</td>
+                  <td class="num">{{ b.n }}</td>
+                  <td
+                    class="num"
+                    :class="b.hitPct >= 55 ? 'up' : b.hitPct < 50 ? 'down' : ''"
+                  >
+                    {{ b.hitPct.toFixed(1) }}%
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section v-if="selected" ref="chartPanel" class="chart-panel">
@@ -954,22 +1034,71 @@ tbody tr.active {
 .agreement {
   font-weight: 600;
   border-radius: 4px;
+  line-height: 1.15;
 }
-.agreement.agree-3 {
+.agreement-sub {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.75;
+  margin-top: 0.1rem;
+}
+.agreement.conf-high {
   background: #d1fae5;
   color: #065f46;
 }
-.agreement.agree-2 {
+.agreement.conf-mid {
   background: #fef3c7;
   color: #92400e;
 }
-.agreement.agree-1 {
+.agreement.conf-low {
   background: #fee2e2;
   color: #991b1b;
 }
-.agreement.agree-0 {
+.agreement.conf-none {
   background: #f3f4f6;
   color: #6b7280;
+}
+.agreement-report {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #e0e4ea;
+}
+.agreement-report h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.3rem;
+  font-weight: 600;
+}
+.agreement-note {
+  margin: 0 0 0.6rem;
+  color: #666;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.agreement-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.agreement-group h4 {
+  font-size: 0.8rem;
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  color: #444;
+}
+.agreement-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.agreement-report-table th,
+.agreement-report-table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid #eee;
+}
+.agreement-report-table th {
+  background: #f7f7f7;
+  text-align: left;
 }
 .backtest-panel {
   border: 1px solid #d4dae2;

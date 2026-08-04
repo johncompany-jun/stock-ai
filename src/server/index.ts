@@ -69,7 +69,51 @@ app.get("/api/candles/:code", async (c) => {
   return c.json({ code, candles: rows });
 });
 
-const ALL_MODELS = ["lstm_v1", "sma_cross_v1", "rsi_reversal_v1"] as const;
+const ALL_MODELS = [
+  "lstm_v1",
+  "sma_cross_v1",
+  "rsi_reversal_v1",
+  "volume_breakout_v1",
+] as const;
+
+const computeConfidence = (
+  currentClose: number,
+  selectedPrediction: number,
+  perModelPreds: Array<number | null>,
+): { agreement: number; agreementTotal: number; returnStdevPct: number; confidence: number } => {
+  const selectedDir = Math.sign(selectedPrediction - currentClose);
+  const returnPcts: number[] = [];
+  let agreement = 0;
+  let total = 0;
+
+  for (const p of perModelPreds) {
+    if (p == null) continue;
+    total++;
+    if (Math.sign(p - currentClose) === selectedDir && selectedDir !== 0) agreement++;
+    returnPcts.push(((p - currentClose) / currentClose) * 100);
+  }
+
+  const directionScore = total > 0 ? (agreement / total) * 100 : 0;
+
+  let returnStdevPct = 0;
+  let magnitudeScore = 50;
+  if (returnPcts.length >= 2) {
+    const mean = returnPcts.reduce((a, b) => a + b, 0) / returnPcts.length;
+    const variance =
+      returnPcts.reduce((s, x) => s + (x - mean) * (x - mean), 0) / returnPcts.length;
+    returnStdevPct = Math.sqrt(variance);
+    const cv = returnStdevPct / Math.max(Math.abs(mean), 1);
+    magnitudeScore = Math.max(0, Math.min(100, 100 * (1 - cv / 2)));
+  }
+
+  const confidence = Math.round(0.65 * directionScore + 0.35 * magnitudeScore);
+  return {
+    agreement,
+    agreementTotal: total,
+    returnStdevPct,
+    confidence,
+  };
+};
 
 app.get("/api/rankings", async (c) => {
   const db = drizzle(c.env.DB);
@@ -77,7 +121,10 @@ app.get("/api/rankings", async (c) => {
   const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
   const sort = c.req.query("sort") === "return" ? "return" : "profit";
   const model = c.req.query("model") ?? "lstm_v1";
-  const minAgreement = Math.min(3, Math.max(0, Number(c.req.query("minAgreement") ?? "0")));
+  const minAgreement = Math.min(
+    ALL_MODELS.length,
+    Math.max(0, Number(c.req.query("minAgreement") ?? "0")),
+  );
   const fetchLimit = minAgreement > 0 ? Math.min(limit * 10, 500) : limit;
 
   const currentClose = sql<number>`(
@@ -97,6 +144,7 @@ app.get("/api/rankings", async (c) => {
   const predLstm = predByModel("lstm_v1");
   const predSma = predByModel("sma_cross_v1");
   const predRsi = predByModel("rsi_reversal_v1");
+  const predVol = predByModel("volume_breakout_v1");
 
   const returnPct = sql<number>`((${predictions.predictedClose} - ${currentClose}) / ${currentClose}) * 100`;
   const lots = sql<number>`CAST(${budget} / (${currentClose} * 100) AS INTEGER)`;
@@ -120,6 +168,7 @@ app.get("/api/rankings", async (c) => {
       predLstm,
       predSma,
       predRsi,
+      predVol,
     })
     .from(predictions)
     .innerJoin(stocks, eq(stocks.code, predictions.code))
@@ -138,14 +187,10 @@ app.get("/api/rankings", async (c) => {
       lstm_v1: r.predLstm,
       sma_cross_v1: r.predSma,
       rsi_reversal_v1: r.predRsi,
+      volume_breakout_v1: r.predVol,
     };
-    const selectedDir = Math.sign(r.predictedClose - r.currentClose);
-    let agreement = 0;
-    for (const m of ALL_MODELS) {
-      const p = preds[m];
-      if (p == null) continue;
-      if (Math.sign(p - r.currentClose) === selectedDir && selectedDir !== 0) agreement++;
-    }
+    const perModel = ALL_MODELS.map((m) => preds[m] ?? null);
+    const conf = computeConfidence(r.currentClose, r.predictedClose, perModel);
     return {
       code: r.code,
       name: r.name,
@@ -160,8 +205,10 @@ app.get("/api/rankings", async (c) => {
       buyableLots: r.buyableLots,
       expectedProfitYen: r.expectedProfitYen,
       predictionsByModel: preds,
-      agreement,
-      agreementTotal: ALL_MODELS.length,
+      agreement: conf.agreement,
+      agreementTotal: conf.agreementTotal,
+      returnStdevPct: conf.returnStdevPct,
+      confidence: conf.confidence,
     };
   });
 
@@ -177,6 +224,94 @@ app.get("/api/rankings", async (c) => {
     model,
     minAgreement,
   });
+});
+
+app.get("/api/backtest-agreement", async (c) => {
+  const db = drizzle(c.env.DB);
+  const selectedModel = c.req.query("model") ?? "lstm_v1";
+  if (!ALL_MODELS.includes(selectedModel as (typeof ALL_MODELS)[number])) {
+    return c.json({ error: `unknown model: ${selectedModel}` }, 400);
+  }
+
+  const rows = (await db
+    .select({
+      horizonDays: predictionLog.horizonDays,
+      code: predictionLog.code,
+      runDate: predictionLog.runDate,
+      modelName: predictionLog.modelName,
+      lastClose: predictionLog.lastClose,
+      predictedClose: predictionLog.predictedClose,
+      actualClose: predictionLog.actualClose,
+    })
+    .from(predictionLog)
+    .where(sql`${predictionLog.actualClose} IS NOT NULL`)) as Array<{
+      horizonDays: number;
+      code: string;
+      runDate: number;
+      modelName: string;
+      lastClose: number;
+      predictedClose: number;
+      actualClose: number;
+    }>;
+
+  type Group = {
+    lastClose: number;
+    actualClose: number;
+    perModel: Map<string, number>;
+  };
+  const groups = new Map<string, Group>();
+  for (const r of rows) {
+    const key = `${r.horizonDays}|${r.code}|${r.runDate}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { lastClose: r.lastClose, actualClose: r.actualClose, perModel: new Map() };
+      groups.set(key, g);
+    }
+    g.perModel.set(r.modelName, r.predictedClose);
+  }
+
+  type BucketAgg = { n: number; hits: number };
+  const buckets = new Map<string, BucketAgg>();
+  for (const [key, g] of groups) {
+    const horizon = Number(key.split("|")[0]);
+    const selectedPred = g.perModel.get(selectedModel);
+    if (selectedPred == null) continue;
+    const selectedDir = Math.sign(selectedPred - g.lastClose);
+    if (selectedDir === 0) continue;
+    let agreement = 0;
+    let total = 0;
+    for (const m of ALL_MODELS) {
+      const p = g.perModel.get(m);
+      if (p == null) continue;
+      total++;
+      if (Math.sign(p - g.lastClose) === selectedDir) agreement++;
+    }
+    const actualDir = Math.sign(g.actualClose - g.lastClose);
+    const hit = actualDir === selectedDir ? 1 : 0;
+    const bkey = `${horizon}|${agreement}|${total}`;
+    let b = buckets.get(bkey);
+    if (!b) {
+      b = { n: 0, hits: 0 };
+      buckets.set(bkey, b);
+    }
+    b.n++;
+    b.hits += hit;
+  }
+
+  const out = Array.from(buckets.entries())
+    .map(([bkey, b]) => {
+      const [h, a, t] = bkey.split("|").map(Number);
+      return {
+        horizonDays: h,
+        agreement: a,
+        agreementTotal: t,
+        n: b.n,
+        hitPct: b.n > 0 ? (b.hits / b.n) * 100 : 0,
+      };
+    })
+    .sort((x, y) => x.horizonDays - y.horizonDays || y.agreement - x.agreement);
+
+  return c.json({ model: selectedModel, buckets: out });
 });
 
 app.get("/api/backtest", async (c) => {

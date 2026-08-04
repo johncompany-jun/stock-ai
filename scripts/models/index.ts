@@ -1,9 +1,10 @@
 import { createLstmModel } from "./lstm";
 import { createRsiReversalModel } from "./rsi_reversal";
 import { createSmaCrossModel } from "./sma_cross";
+import { createVolumeBreakoutModel } from "./volume_breakout";
 import type { ModelDef } from "./types";
 
-export type ModelKey = "lstm_v1" | "sma_cross_v1" | "rsi_reversal_v1";
+export type ModelKey = "lstm_v1" | "sma_cross_v1" | "rsi_reversal_v1" | "volume_breakout_v1";
 
 export const buildModel = (
   key: ModelKey,
@@ -16,9 +17,16 @@ export const buildModel = (
       return createSmaCrossModel();
     case "rsi_reversal_v1":
       return createRsiReversalModel();
+    case "volume_breakout_v1":
+      return createVolumeBreakoutModel();
   }
 };
 
-export const ALL_MODEL_KEYS: ModelKey[] = ["lstm_v1", "sma_cross_v1", "rsi_reversal_v1"];
+export const ALL_MODEL_KEYS: ModelKey[] = [
+  "lstm_v1",
+  "sma_cross_v1",
+  "rsi_reversal_v1",
+  "volume_breakout_v1",
+];
 
 export type { ModelDef } from "./types";

@@ -123,7 +123,7 @@ const main = async () => {
   console.log(`selected ${codes.length} codes: ${codes.slice(0, 10).join(",")}${codes.length > 10 ? "..." : ""}`);
 
   const candleStmt = db.query(
-    "SELECT date, close FROM candles WHERE code = ? AND close > 0 ORDER BY date ASC",
+    "SELECT date, close, volume FROM candles WHERE code = ? AND close > 0 ORDER BY date ASC",
   );
   const insertStmt = db.prepare(
     `INSERT OR REPLACE INTO prediction_log
@@ -139,7 +139,7 @@ const main = async () => {
 
   for (let ci = 0; ci < codes.length; ci++) {
     const code = codes[ci];
-    const candles = candleStmt.all(code) as { date: number; close: number }[];
+    const candles = candleStmt.all(code) as { date: number; close: number; volume: number }[];
     const total = candles.length;
     const earliestRunIdx = minTrainRows - 1;
     const latestRunIdx = total - MAX_HORIZON - 1;
@@ -155,11 +155,13 @@ const main = async () => {
       const runDate = candles[runIdx].date;
       const lastClose = candles[runIdx].close;
       const trainStart = Math.max(0, runIdx + 1 - TRAIN_CANDLES);
-      const trainCloses = candles.slice(trainStart, runIdx + 1).map((c) => c.close);
+      const trainSlice = candles.slice(trainStart, runIdx + 1);
+      const trainCloses = trainSlice.map((c) => c.close);
+      const trainVolumes = trainSlice.map((c) => c.volume);
 
       let preds: number[];
       try {
-        preds = await model.predict(trainCloses, MAX_HORIZON);
+        preds = await model.predict(trainCloses, trainVolumes, MAX_HORIZON);
       } catch (e) {
         console.warn(`    runDate=${runDate}: predict failed: ${(e as Error).message}`);
         continue;

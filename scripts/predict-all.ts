@@ -53,7 +53,7 @@ const findSqlitePath = (): string => {
   return `${dir}/${withSize[0].f}`;
 };
 
-type Candle = { date: number; close: number };
+type Candle = { date: number; close: number; volume: number };
 type CandleSource = {
   listCodes: () => Promise<string[]>;
   getCandles: (code: string, since: number) => Promise<Candle[]>;
@@ -66,7 +66,7 @@ const buildLocalSource = (): CandleSource => {
   const db = new Database(sqlitePath);
   const listStmt = db.query("SELECT code FROM stocks ORDER BY code");
   const candleStmt = db.query(
-    "SELECT date, close FROM candles WHERE code = ? AND date >= ? ORDER BY date ASC",
+    "SELECT date, close, volume FROM candles WHERE code = ? AND date >= ? ORDER BY date ASC",
   );
   return {
     listCodes: async () =>
@@ -98,8 +98,10 @@ const buildRemoteSource = (baseUrl: string): CandleSource => {
       `${base}/api/candles/${code}?from=${since}&limit=5000`,
     );
     if (!r.ok) throw new Error(`GET /api/candles/${code} failed: ${r.status}`);
-    const j = (await r.json()) as { candles: { date: number; close: number }[] };
-    return j.candles.map((c) => ({ date: c.date, close: c.close }));
+    const j = (await r.json()) as {
+      candles: { date: number; close: number; volume: number }[];
+    };
+    return j.candles.map((c) => ({ date: c.date, close: c.close, volume: c.volume }));
   };
   return { listCodes, getCandles, close: () => {} };
 };
@@ -195,7 +197,8 @@ const main = async () => {
     }
     try {
       const closes = candles.map((c) => c.close);
-      const preds = await model.predict(closes, HORIZON);
+      const volumes = candles.map((c) => c.volume);
+      const preds = await model.predict(closes, volumes, HORIZON);
       const lastClose = closes[closes.length - 1];
       const predictedClose = preds[preds.length - 1];
       const expectedReturnPct = ((predictedClose - lastClose) / lastClose) * 100;

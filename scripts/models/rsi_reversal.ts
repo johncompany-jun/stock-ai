@@ -29,7 +29,7 @@ export const createRsiReversalModel = (opts: RsiReversalOptions = {}): ModelDef 
   const OVERBOUGHT = opts.overbought ?? 70;
   const REVERSAL = opts.reversalReturnPct ?? 5;
 
-  const predict = async (closes: number[], horizon: number): Promise<number[]> => {
+  const predict = async (closes: number[], _volumes: number[], horizon: number): Promise<number[]> => {
     const value = rsi(closes, PERIOD);
     const lastClose = closes[closes.length - 1];
 

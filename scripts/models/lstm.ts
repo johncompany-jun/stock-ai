@@ -12,7 +12,7 @@ export const createLstmModel = (opts: LstmOptions = {}): ModelDef => {
   const EPOCHS = opts.epochs ?? 20;
   const UNITS = opts.units ?? 16;
 
-  const predict = async (closes: number[], horizon: number): Promise<number[]> => {
+  const predict = async (closes: number[], _volumes: number[], horizon: number): Promise<number[]> => {
     let min = Infinity;
     let max = -Infinity;
     for (const v of closes) {

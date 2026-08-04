@@ -95,6 +95,81 @@ const main = () => {
   console.log("\n=== ワースト 5(絶対誤差率大) ===");
   console.log(JSON.stringify(badRuns, null, 2));
 
+  const pivoted = db
+    .query(
+      `SELECT
+         horizon_days, code, run_date,
+         MAX(last_close) AS last_close,
+         MAX(actual_close) AS actual_close,
+         MAX(CASE WHEN model_name = 'lstm_v1' THEN predicted_close END) AS pred_lstm,
+         MAX(CASE WHEN model_name = 'sma_cross_v1' THEN predicted_close END) AS pred_sma,
+         MAX(CASE WHEN model_name = 'rsi_reversal_v1' THEN predicted_close END) AS pred_rsi,
+         MAX(CASE WHEN model_name = 'volume_breakout_v1' THEN predicted_close END) AS pred_vol
+       FROM prediction_log
+       WHERE actual_close IS NOT NULL
+       GROUP BY horizon_days, code, run_date`,
+    )
+    .all() as Array<{
+      horizon_days: number;
+      last_close: number;
+      actual_close: number;
+      pred_lstm: number | null;
+      pred_sma: number | null;
+      pred_rsi: number | null;
+      pred_vol: number | null;
+    }>;
+
+  const modelKey = MODEL as "lstm_v1" | "sma_cross_v1" | "rsi_reversal_v1" | "volume_breakout_v1";
+  const pickPred = (r: (typeof pivoted)[number], m: string): number | null => {
+    if (m === "lstm_v1") return r.pred_lstm;
+    if (m === "sma_cross_v1") return r.pred_sma;
+    if (m === "rsi_reversal_v1") return r.pred_rsi;
+    if (m === "volume_breakout_v1") return r.pred_vol;
+    return null;
+  };
+  const ALL = ["lstm_v1", "sma_cross_v1", "rsi_reversal_v1", "volume_breakout_v1"];
+
+  type Bucket = { n: number; hits: number };
+  const buckets = new Map<string, Bucket>();
+  for (const r of pivoted) {
+    const selectedPred = pickPred(r, modelKey);
+    if (selectedPred == null) continue;
+    const selectedDir = Math.sign(selectedPred - r.last_close);
+    if (selectedDir === 0) continue;
+    let agr = 0;
+    let total = 0;
+    for (const m of ALL) {
+      const p = pickPred(r, m);
+      if (p == null) continue;
+      total++;
+      if (Math.sign(p - r.last_close) === selectedDir) agr++;
+    }
+    const actualDir = Math.sign(r.actual_close - r.last_close);
+    const hit = actualDir === selectedDir ? 1 : 0;
+    const key = `${r.horizon_days}|${agr}|${total}`;
+    const b = buckets.get(key) ?? { n: 0, hits: 0 };
+    b.n++;
+    b.hits += hit;
+    buckets.set(key, b);
+  }
+
+  if (buckets.size > 0) {
+    console.log("\n=== 信頼度別 実測勝率 (選択モデル=" + MODEL + ") ===");
+    console.log(`${pad("horizon", 8)}  ${pad("一致", 6)}  ${pad("n", 5)}  ${pad("hit%", 6)}`);
+    console.log("-".repeat(34));
+    const rows = Array.from(buckets.entries())
+      .map(([k, v]) => {
+        const [h, a, t] = k.split("|").map(Number);
+        return { h, a, t, n: v.n, hitPct: v.n > 0 ? (v.hits / v.n) * 100 : 0 };
+      })
+      .sort((x, y) => x.h - y.h || y.a - x.a);
+    for (const r of rows) {
+      console.log(
+        `${pad(r.h + "d", 8)}  ${pad(`${r.a}/${r.t}`, 6)}  ${pad(String(r.n), 5)}  ${pad(fmt(r.hitPct, 1), 6)}`,
+      );
+    }
+  }
+
   db.close();
 };
 
