@@ -69,6 +69,42 @@ app.get("/api/candles/:code", async (c) => {
   return c.json({ code, candles: rows });
 });
 
+app.get("/api/backtest-candidates", async (c) => {
+  const db = drizzle(c.env.DB);
+  const marketsRaw = c.req.query("markets") ?? "東S,東G";
+  const markets = marketsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  const minRange = Math.max(0, Number(c.req.query("minRange") ?? "0.2"));
+  const lookbackYears = Math.max(0.1, Number(c.req.query("lookbackYears") ?? "3"));
+  const now = new Date();
+  const sinceDate = new Date(now.getTime() - lookbackYears * 365 * 24 * 60 * 60 * 1000);
+  const sinceYmd =
+    sinceDate.getUTCFullYear() * 10000 +
+    (sinceDate.getUTCMonth() + 1) * 100 +
+    sinceDate.getUTCDate();
+
+  const rows = (await db
+    .select({ code: stocks.code })
+    .from(stocks)
+    .innerJoin(
+      sql`(SELECT code, MAX(close) AS max_c, MIN(close) AS min_c
+           FROM candles WHERE date >= ${sinceYmd} AND close > 0
+           GROUP BY code) c`,
+      sql`c.code = ${stocks.code}`,
+    )
+    .where(
+      sql`${stocks.market} IN (${sql.join(markets.map((m) => sql`${m}`), sql`, `)})
+          AND c.max_c / c.min_c >= ${1 + minRange}`,
+    )) as Array<{ code: string }>;
+
+  return c.json({
+    codes: rows.map((r) => r.code),
+    markets,
+    minRange,
+    lookbackYears,
+    since: sinceYmd,
+  });
+});
+
 const ALL_MODELS = [
   "lstm_v1",
   "sma_cross_v1",

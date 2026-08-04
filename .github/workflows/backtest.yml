@@ -1,0 +1,82 @@
+name: Backtest all models
+
+on:
+  workflow_dispatch:
+    inputs:
+      stocks:
+        description: "Sample stocks count"
+        default: "50"
+      dates:
+        description: "Run dates per stock"
+        default: "30"
+      seed:
+        description: "RNG seed (same seed → same stock sample across models)"
+        default: "42"
+      skip_lstm:
+        description: "Skip LSTM (slowest; skip for a fast SMA/RSI/Volume refresh)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SOURCE_URL: https://stock-ai.uk
+      STOCKS: ${{ inputs.stocks }}
+      DATES: ${{ inputs.dates }}
+      SEED: ${{ inputs.seed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Backtest (SMA cross)
+        run: >
+          bun run scripts/backtest.ts
+          --model=sma_cross_v1
+          --sourceUrl "$SOURCE_URL"
+          --stocks "$STOCKS" --dates "$DATES" --seed "$SEED"
+          --out data/backtest_sma.sql --apply --remote
+
+      - name: Backtest (RSI reversal)
+        run: >
+          bun run scripts/backtest.ts
+          --model=rsi_reversal_v1
+          --sourceUrl "$SOURCE_URL"
+          --stocks "$STOCKS" --dates "$DATES" --seed "$SEED"
+          --out data/backtest_rsi.sql --apply --remote
+
+      - name: Backtest (Volume breakout)
+        run: >
+          bun run scripts/backtest.ts
+          --model=volume_breakout_v1
+          --sourceUrl "$SOURCE_URL"
+          --stocks "$STOCKS" --dates "$DATES" --seed "$SEED"
+          --out data/backtest_volume.sql --apply --remote
+
+      - name: Backtest (LSTM)
+        if: ${{ !inputs.skip_lstm }}
+        run: >
+          bun run scripts/backtest.ts
+          --model=lstm_v1
+          --sourceUrl "$SOURCE_URL"
+          --stocks "$STOCKS" --dates "$DATES" --seed "$SEED"
+          --out data/backtest_lstm.sql --apply --remote
+
+      - name: Summary
+        if: always()
+        run: |
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT model_name, COUNT(*) AS n, COUNT(DISTINCT code) AS stocks, COUNT(DISTINCT run_date) AS run_dates FROM prediction_log GROUP BY model_name"
