@@ -42,7 +42,8 @@ export type Candle = typeof candles.$inferSelect;
 export const predictions = sqliteTable(
   "predictions",
   {
-    code: text("code").primaryKey(),
+    code: text("code").notNull(),
+    modelName: text("model_name").notNull(),
     runAt: integer("run_at").notNull(),
     lastDate: integer("last_date").notNull(),
     lastClose: real("last_close").notNull(),
@@ -52,7 +53,9 @@ export const predictions = sqliteTable(
     predsJson: text("preds_json").notNull(),
   },
   (t) => ({
+    pk: primaryKey({ columns: [t.code, t.modelName] }),
     returnIdx: index("predictions_return_idx").on(t.expectedReturnPct),
+    modelIdx: index("predictions_model_idx").on(t.modelName),
   }),
 );
 

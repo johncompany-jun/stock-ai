@@ -4,6 +4,7 @@ import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import * as tf from "@tensorflow/tfjs";
+import { ALL_MODEL_KEYS, buildModel, type ModelKey } from "./models";
 
 const { values } = parseArgs({
   options: {
@@ -15,9 +16,11 @@ const { values } = parseArgs({
     units: { type: "string", default: "16" },
     days: { type: "string", default: "365" },
     chunk: { type: "string", default: "200" },
-    out: { type: "string", default: "data/seed_predictions.sql" },
+    model: { type: "string", default: "lstm_v1" },
+    out: { type: "string" },
     apply: { type: "boolean", default: false },
     remote: { type: "boolean", default: false },
+    sourceUrl: { type: "string" },
   },
 });
 
@@ -27,73 +30,82 @@ const EPOCHS = Number(values.epochs);
 const UNITS = Number(values.units);
 const DAYS = Number(values.days);
 const CHUNK = Number(values.chunk);
-const OUT_PATH = resolve(process.cwd(), values.out!);
+const MODEL_KEY = values.model as ModelKey;
+const OUT_PATH = resolve(
+  process.cwd(),
+  values.out ?? `data/seed_predictions_${MODEL_KEY}.sql`,
+);
 const DB_NAME = "stock-ai";
+
+if (!ALL_MODEL_KEYS.includes(MODEL_KEY)) {
+  console.error(`unknown model: ${MODEL_KEY}. use one of: ${ALL_MODEL_KEYS.join(", ")}`);
+  process.exit(1);
+}
+
+const model = buildModel(MODEL_KEY, { window: WINDOW, epochs: EPOCHS, units: UNITS });
 
 const findSqlitePath = (): string => {
   const dir = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
   const files = readdirSync(dir).filter((f) => f.endsWith(".sqlite"));
   if (!files.length) throw new Error(`no sqlite file in ${dir}`);
-  // 複数ある場合はサイズ最大 = データが入っているものを選ぶ
   const withSize = files.map((f) => ({ f, size: statSync(`${dir}/${f}`).size }));
   withSize.sort((a, b) => b.size - a.size);
   return `${dir}/${withSize[0].f}`;
 };
 
+type Candle = { date: number; close: number };
+type CandleSource = {
+  listCodes: () => Promise<string[]>;
+  getCandles: (code: string, since: number) => Promise<Candle[]>;
+  close: () => void;
+};
+
+const buildLocalSource = (): CandleSource => {
+  const sqlitePath = findSqlitePath();
+  console.log(`sqlite: ${sqlitePath}`);
+  const db = new Database(sqlitePath);
+  const listStmt = db.query("SELECT code FROM stocks ORDER BY code");
+  const candleStmt = db.query(
+    "SELECT date, close FROM candles WHERE code = ? AND date >= ? ORDER BY date ASC",
+  );
+  return {
+    listCodes: async () =>
+      (listStmt.all() as { code: string }[]).map((r) => r.code),
+    getCandles: async (code, since) =>
+      candleStmt.all(code, since) as Candle[],
+    close: () => db.close(),
+  };
+};
+
+const buildRemoteSource = (baseUrl: string): CandleSource => {
+  const base = baseUrl.replace(/\/$/, "");
+  const listCodes = async (): Promise<string[]> => {
+    const codes: string[] = [];
+    const PAGE = 200;
+    let offset = 0;
+    for (;;) {
+      const r = await fetch(`${base}/api/stocks?limit=${PAGE}&offset=${offset}`);
+      if (!r.ok) throw new Error(`GET /api/stocks failed: ${r.status}`);
+      const j = (await r.json()) as { items: { code: string }[]; total: number };
+      for (const it of j.items) codes.push(it.code);
+      if (codes.length >= j.total || j.items.length === 0) break;
+      offset += PAGE;
+    }
+    return codes;
+  };
+  const getCandles = async (code: string, since: number): Promise<Candle[]> => {
+    const r = await fetch(
+      `${base}/api/candles/${code}?from=${since}&limit=5000`,
+    );
+    if (!r.ok) throw new Error(`GET /api/candles/${code} failed: ${r.status}`);
+    const j = (await r.json()) as { candles: { date: number; close: number }[] };
+    return j.candles.map((c) => ({ date: c.date, close: c.close }));
+  };
+  return { listCodes, getCandles, close: () => {} };
+};
+
 const toYyyymmdd = (d: Date): number =>
   d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
-
-const minMaxNormalize = (values: number[]): { values: number[]; min: number; max: number } => {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const v of values) {
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  const span = max - min || 1;
-  return { values: values.map((v) => (v - min) / span), min, max };
-};
-
-const trainAndPredict = async (
-  normalized: number[],
-  horizon: number,
-): Promise<number[]> => {
-  const xs: number[][][] = [];
-  const ys: number[][] = [];
-  for (let i = 0; i <= normalized.length - WINDOW - 1; i++) {
-    xs.push(normalized.slice(i, i + WINDOW).map((v) => [v]));
-    ys.push([normalized[i + WINDOW]]);
-  }
-  const xsT = tf.tensor3d(xs, [xs.length, WINDOW, 1]);
-  const ysT = tf.tensor2d(ys, [ys.length, 1]);
-
-  const model = tf.sequential({
-    layers: [
-      tf.layers.lstm({ units: UNITS, inputShape: [WINDOW, 1] }),
-      tf.layers.dense({ units: 1 }),
-    ],
-  });
-  model.compile({ optimizer: tf.train.adam(0.01), loss: "meanSquaredError" });
-  await model.fit(xsT, ysT, { epochs: EPOCHS, batchSize: 32, shuffle: true, verbose: 0 });
-
-  const window = normalized.slice(-WINDOW);
-  const preds: number[] = [];
-  for (let i = 0; i < horizon; i++) {
-    const input = tf.tensor3d([window.map((v) => [v])], [1, WINDOW, 1]);
-    const p = model.predict(input) as tf.Tensor;
-    const val = (await p.data())[0];
-    preds.push(val);
-    window.shift();
-    window.push(val);
-    input.dispose();
-    p.dispose();
-  }
-
-  xsT.dispose();
-  ysT.dispose();
-  model.dispose();
-  return preds;
-};
 
 type PredictionRow = {
   code: string;
@@ -108,16 +120,17 @@ type PredictionRow = {
 const writeSql = (rows: PredictionRow[]) => {
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   const chunks: string[] = [];
-  for (let i = 0; i < rows.length; i += 500) {
-    const slice = rows.slice(i, i + 500);
+  const BATCH = 100;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const slice = rows.slice(i, i + BATCH);
     const vals = slice
       .map(
         (r) =>
-          `('${r.code}',${r.runAt},${r.lastDate},${r.lastClose},${HORIZON},${r.predictedClose},${r.expectedReturnPct},'${JSON.stringify(r.preds)}')`,
+          `('${r.code}','${model.name}',${r.runAt},${r.lastDate},${r.lastClose},${HORIZON},${r.predictedClose},${r.expectedReturnPct},'${JSON.stringify(r.preds)}')`,
       )
       .join(",\n");
     chunks.push(
-      `INSERT OR REPLACE INTO predictions (code,run_at,last_date,last_close,horizon_days,predicted_close,expected_return_pct,preds_json) VALUES\n${vals};`,
+      `INSERT OR REPLACE INTO predictions (code,model_name,run_at,last_date,last_close,horizon_days,predicted_close,expected_return_pct,preds_json) VALUES\n${vals};`,
     );
   }
   writeFileSync(OUT_PATH, chunks.join("\n\n") + "\n", "utf8");
@@ -135,13 +148,16 @@ const applySql = () => {
 };
 
 const main = async () => {
-  await tf.setBackend("cpu");
-  await tf.ready();
-  console.log(`tfjs backend: ${tf.getBackend()}`);
+  if (MODEL_KEY === "lstm_v1") {
+    await tf.setBackend("cpu");
+    await tf.ready();
+    console.log(`tfjs backend: ${tf.getBackend()}`);
+  }
 
-  const sqlitePath = findSqlitePath();
-  console.log(`sqlite: ${sqlitePath}`);
-  const db = new Database(sqlitePath);
+  const source: CandleSource = values.sourceUrl
+    ? buildRemoteSource(values.sourceUrl)
+    : buildLocalSource();
+  if (values.sourceUrl) console.log(`source: ${values.sourceUrl}`);
 
   const requestedCodes = values.codes
     ? values.codes.split(",").map((s) => s.trim()).filter(Boolean)
@@ -151,18 +167,14 @@ const main = async () => {
   if (requestedCodes) {
     codes = requestedCodes;
   } else {
-    codes = (db.query("SELECT code FROM stocks ORDER BY code").all() as { code: string }[]).map(
-      (r) => r.code,
-    );
+    codes = await source.listCodes();
   }
   if (values.limit) codes = codes.slice(0, Number(values.limit));
 
   const sinceDate = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
   const since = toYyyymmdd(sinceDate);
-  console.log(`codes: ${codes.length}, window=${WINDOW}, horizon=${HORIZON}, since=${since}`);
-
-  const candleStmt = db.query(
-    "SELECT date, close FROM candles WHERE code = ? AND date >= ? ORDER BY date ASC",
+  console.log(
+    `model=${model.name}  codes: ${codes.length}, window=${WINDOW}, horizon=${HORIZON}, since=${since}`,
   );
 
   const runAt = Math.floor(Date.now() / 1000);
@@ -172,10 +184,10 @@ const main = async () => {
   let skipped = 0;
   let failed = 0;
   const t0 = Date.now();
-  const minRows = WINDOW + 10;
+  const minRows = Math.max(model.minCandles, WINDOW + 10);
 
   for (const code of codes) {
-    const candles = candleStmt.all(code, since) as { date: number; close: number }[];
+    const candles = await source.getCandles(code, since);
     if (candles.length < minRows) {
       skipped++;
       done++;
@@ -183,10 +195,7 @@ const main = async () => {
     }
     try {
       const closes = candles.map((c) => c.close);
-      const norm = minMaxNormalize(closes);
-      const rawPreds = await trainAndPredict(norm.values, HORIZON);
-      const span = norm.max - norm.min || 1;
-      const preds = rawPreds.map((v) => v * span + norm.min);
+      const preds = await model.predict(closes, HORIZON);
       const lastClose = closes[closes.length - 1];
       const predictedClose = preds[preds.length - 1];
       const expectedReturnPct = ((predictedClose - lastClose) / lastClose) * 100;
@@ -229,10 +238,10 @@ const main = async () => {
 
   const elapsed = (Date.now() - t0) / 1000;
   console.log(
-    `done: ${done}/${codes.length}  ok=${ok} skip=${skipped} fail=${failed}  in ${elapsed.toFixed(1)}s`,
+    `done: model=${model.name}  ${done}/${codes.length}  ok=${ok} skip=${skipped} fail=${failed}  in ${elapsed.toFixed(1)}s`,
   );
 
-  db.close();
+  source.close();
 };
 
 main().catch((e) => {

@@ -54,13 +54,18 @@ type Ranking = {
   code: string;
   name: string;
   market: string;
-  lastClose: number;
+  modelName: string;
+  currentClose: number;
+  currentDate: number;
   predictedClose: number;
   expectedReturnPct: number;
   lastDate: number;
   runAt: number;
   buyableLots: number;
   expectedProfitYen: number;
+  predictionsByModel: Record<string, number | null>;
+  agreement: number;
+  agreementTotal: number;
 };
 
 const BUDGET_PRESETS = [50000, 100000, 300000, 500000];
@@ -83,20 +88,37 @@ type BacktestResponse = {
   meta: { rows: number; stocks: number; runDates: number };
   byHorizon: BacktestHorizon[];
 };
+const MODEL_OPTIONS: Array<{ key: string; label: string; shortLabel: string }> = [
+  { key: "lstm_v1", label: "LSTM (深層学習)", shortLabel: "LSTM" },
+  { key: "sma_cross_v1", label: "SMAクロス (移動平均)", shortLabel: "SMA" },
+  { key: "rsi_reversal_v1", label: "RSI逆張り", shortLabel: "RSI" },
+];
+const selectedModel = ref<string>("lstm_v1");
+const AGREEMENT_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 0, label: "全て" },
+  { value: 2, label: "2/3以上" },
+  { value: 3, label: "3/3のみ" },
+];
+const minAgreement = ref<number>(0);
 const backtest = ref<BacktestResponse | null>(null);
 const backtestLoading = ref(false);
 const backtestError = ref<string | null>(null);
+let backtestSeq = 0;
 const fetchBacktest = async () => {
+  const my = ++backtestSeq;
   backtestLoading.value = true;
   backtestError.value = null;
   try {
-    const r = await fetch("/api/backtest");
+    const params = new URLSearchParams({ model: selectedModel.value });
+    const r = await fetch(`/api/backtest?${params}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    backtest.value = (await r.json()) as BacktestResponse;
+    const j = (await r.json()) as BacktestResponse;
+    if (my !== backtestSeq) return;
+    backtest.value = j;
   } catch (e) {
-    backtestError.value = String(e);
+    if (my === backtestSeq) backtestError.value = String(e);
   } finally {
-    backtestLoading.value = false;
+    if (my === backtestSeq) backtestLoading.value = false;
   }
 };
 
@@ -109,6 +131,8 @@ const fetchRankings = async () => {
       budget: String(budget.value),
       limit: "20",
       sort: sortMode.value,
+      model: selectedModel.value,
+      minAgreement: String(minAgreement.value),
     });
     const r = await fetch(`/api/rankings?${params}`);
     const j = (await r.json()) as { items: Ranking[] };
@@ -125,7 +149,7 @@ const selectRanking = (r: Ranking) => {
     code: r.code,
     name: r.name,
     market: r.market,
-    price: r.lastClose,
+    price: r.currentClose,
     changeAbs: null,
     changePct: null,
   });
@@ -343,7 +367,10 @@ onMounted(async () => {
   fetchBacktest();
 });
 
-watch([budget, sortMode], () => fetchRankings());
+watch([budget, sortMode, selectedModel, minAgreement], () => {
+  fetchRankings();
+  fetchBacktest();
+});
 
 const fmt = (n: number | null) => (n === null ? "-" : n.toLocaleString());
 
@@ -402,6 +429,26 @@ const expectedProfit = computed(() => {
             リターン%順
           </button>
         </span>
+        <span class="sort-toggle model-toggle">
+          <button
+            v-for="m in MODEL_OPTIONS"
+            :key="m.key"
+            :class="{ active: selectedModel === m.key }"
+            @click="selectedModel = m.key"
+          >
+            {{ m.shortLabel }}
+          </button>
+        </span>
+        <span class="sort-toggle model-toggle">
+          <button
+            v-for="a in AGREEMENT_OPTIONS"
+            :key="a.value"
+            :class="{ active: minAgreement === a.value }"
+            @click="minAgreement = a.value"
+          >
+            {{ a.label }}
+          </button>
+        </span>
       </div>
       <div v-if="rankingsLoading" class="ranking-msg">読み込み中...</div>
       <div v-else-if="!rankings.length" class="ranking-msg">
@@ -418,6 +465,9 @@ const expectedProfit = computed(() => {
             <th class="num">予測値</th>
             <th class="num">リターン</th>
             <th class="num">利益(円)</th>
+            <th class="num" title="選択モデルと同じ方向を予測したモデル数 / 全モデル数">
+              信頼度
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -430,7 +480,7 @@ const expectedProfit = computed(() => {
             <td class="num">{{ i + 1 }}</td>
             <td class="mono">{{ r.code }}</td>
             <td>{{ r.name }}</td>
-            <td class="num">{{ fmt(r.lastClose) }}</td>
+            <td class="num">{{ fmt(r.currentClose) }}</td>
             <td class="num">{{ r.buyableLots }}</td>
             <td class="num">{{ fmt(Math.round(r.predictedClose)) }}</td>
             <td class="num" :class="r.expectedReturnPct >= 0 ? 'up' : 'down'">
@@ -438,6 +488,9 @@ const expectedProfit = computed(() => {
             </td>
             <td class="num" :class="r.expectedProfitYen >= 0 ? 'up' : 'down'">
               {{ fmtYen(r.expectedProfitYen) }}
+            </td>
+            <td class="num agreement" :class="`agree-${r.agreement}`">
+              {{ r.agreement }}/{{ r.agreementTotal }}
             </td>
           </tr>
         </tbody>
@@ -447,10 +500,18 @@ const expectedProfit = computed(() => {
     <section class="backtest-panel">
       <header class="backtest-header">
         <h2>バックテスト精度 <span class="backtest-tag">検証中</span></h2>
-        <span v-if="backtest?.meta" class="backtest-meta">
-          {{ backtest.meta.rows.toLocaleString() }} 予測 / {{ backtest.meta.stocks }} 銘柄 /
-          {{ backtest.meta.runDates }} 日付
-        </span>
+        <div class="backtest-controls">
+          <label class="backtest-model-label">
+            モデル
+            <select v-model="selectedModel" @change="fetchBacktest" class="backtest-model-select">
+              <option v-for="m in MODEL_OPTIONS" :key="m.key" :value="m.key">{{ m.label }}</option>
+            </select>
+          </label>
+          <span v-if="backtest?.meta" class="backtest-meta">
+            {{ backtest.meta.rows.toLocaleString() }} 予測 / {{ backtest.meta.stocks }} 銘柄 /
+            {{ backtest.meta.runDates }} 日付
+          </span>
+        </div>
       </header>
       <div v-if="backtestLoading" class="ranking-msg">読み込み中...</div>
       <div v-else-if="backtestError" class="ranking-msg">エラー: {{ backtestError }}</div>
@@ -831,9 +892,14 @@ tbody tr.active {
   border-radius: 4px;
 }
 .sort-toggle {
-  margin-left: auto;
   display: inline-flex;
   gap: 0;
+}
+.sort-toggle:not(.model-toggle) {
+  margin-left: auto;
+}
+.model-toggle {
+  margin-left: 0.5rem;
 }
 .sort-toggle button {
   padding: 0.25rem 0.6rem;
@@ -845,9 +911,11 @@ tbody tr.active {
 .sort-toggle button:first-child {
   border-radius: 4px 0 0 4px;
 }
+.sort-toggle button:not(:first-child) {
+  border-left: none;
+}
 .sort-toggle button:last-child {
   border-radius: 0 4px 4px 0;
-  border-left: none;
 }
 .sort-toggle button.active {
   background: #333;
@@ -883,6 +951,26 @@ tbody tr.active {
 .ranking-table tbody tr.active {
   background: #e0ecff;
 }
+.agreement {
+  font-weight: 600;
+  border-radius: 4px;
+}
+.agreement.agree-3 {
+  background: #d1fae5;
+  color: #065f46;
+}
+.agreement.agree-2 {
+  background: #fef3c7;
+  color: #92400e;
+}
+.agreement.agree-1 {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.agreement.agree-0 {
+  background: #f3f4f6;
+  color: #6b7280;
+}
 .backtest-panel {
   border: 1px solid #d4dae2;
   border-radius: 6px;
@@ -917,6 +1005,26 @@ tbody tr.active {
 .backtest-meta {
   color: #666;
   font-size: 0.75rem;
+}
+.backtest-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.backtest-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #444;
+}
+.backtest-model-select {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #cbd2da;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.8rem;
 }
 .backtest-table {
   width: 100%;

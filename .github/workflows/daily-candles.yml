@@ -13,10 +13,11 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SOURCE_URL: https://stock-ai.uk
     steps:
       - uses: actions/checkout@v4
 
@@ -30,8 +31,26 @@ jobs:
       - name: Fetch daily candles (diff mode) and apply to remote D1
         run: bun run scripts/fetch-candles.ts --remote --apply
 
+      - name: Predict (SMA cross) all stocks and apply to remote D1
+        run: >
+          bun run scripts/predict-all.ts
+          --model sma_cross_v1
+          --sourceUrl "$SOURCE_URL"
+          --days 365 --chunk 200
+          --apply --remote
+
+      - name: Predict (RSI reversal) all stocks and apply to remote D1
+        run: >
+          bun run scripts/predict-all.ts
+          --model rsi_reversal_v1
+          --sourceUrl "$SOURCE_URL"
+          --days 365 --chunk 200
+          --apply --remote
+
       - name: Summary
         if: always()
         run: |
           bunx wrangler d1 execute stock-ai --remote --command \
             "SELECT COUNT(DISTINCT code) AS codes, COUNT(*) AS rows, MAX(date) AS latest FROM candles"
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT model_name, COUNT(*) AS n, MAX(run_at) AS latest_run FROM predictions GROUP BY model_name"

@@ -69,40 +69,114 @@ app.get("/api/candles/:code", async (c) => {
   return c.json({ code, candles: rows });
 });
 
+const ALL_MODELS = ["lstm_v1", "sma_cross_v1", "rsi_reversal_v1"] as const;
+
 app.get("/api/rankings", async (c) => {
   const db = drizzle(c.env.DB);
   const budget = Math.max(1, Number(c.req.query("budget") ?? "100000"));
   const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
   const sort = c.req.query("sort") === "return" ? "return" : "profit";
+  const model = c.req.query("model") ?? "lstm_v1";
+  const minAgreement = Math.min(3, Math.max(0, Number(c.req.query("minAgreement") ?? "0")));
+  const fetchLimit = minAgreement > 0 ? Math.min(limit * 10, 500) : limit;
 
-  const lots = sql<number>`CAST(${budget} / (${predictions.lastClose} * 100) AS INTEGER)`;
-  const profit = sql<number>`(${predictions.predictedClose} - ${predictions.lastClose}) * 100 * ${lots}`;
-  const order = sort === "return" ? sql`${predictions.expectedReturnPct} DESC` : sql`${profit} DESC`;
+  const currentClose = sql<number>`(
+    SELECT c.close FROM candles c
+    WHERE c.code = ${predictions.code} AND c.close > 0
+    ORDER BY c.date DESC LIMIT 1
+  )`;
+  const currentDate = sql<number>`(
+    SELECT c.date FROM candles c
+    WHERE c.code = ${predictions.code} AND c.close > 0
+    ORDER BY c.date DESC LIMIT 1
+  )`;
+  const predByModel = (name: string) => sql<number | null>`(
+    SELECT p2.predicted_close FROM predictions p2
+    WHERE p2.code = ${predictions.code} AND p2.model_name = ${name}
+  )`;
+  const predLstm = predByModel("lstm_v1");
+  const predSma = predByModel("sma_cross_v1");
+  const predRsi = predByModel("rsi_reversal_v1");
+
+  const returnPct = sql<number>`((${predictions.predictedClose} - ${currentClose}) / ${currentClose}) * 100`;
+  const lots = sql<number>`CAST(${budget} / (${currentClose} * 100) AS INTEGER)`;
+  const profit = sql<number>`(${predictions.predictedClose} - ${currentClose}) * 100 * ${lots}`;
+  const order = sort === "return" ? sql`${returnPct} DESC` : sql`${profit} DESC`;
 
   const rows = await db
     .select({
       code: predictions.code,
       name: stocks.name,
       market: stocks.market,
-      lastClose: predictions.lastClose,
+      modelName: predictions.modelName,
+      currentClose,
+      currentDate,
       predictedClose: predictions.predictedClose,
-      expectedReturnPct: predictions.expectedReturnPct,
+      expectedReturnPct: returnPct,
       lastDate: predictions.lastDate,
       runAt: predictions.runAt,
       buyableLots: lots,
       expectedProfitYen: profit,
+      predLstm,
+      predSma,
+      predRsi,
     })
     .from(predictions)
     .innerJoin(stocks, eq(stocks.code, predictions.code))
     .where(
-      sql`${predictions.lastClose} * 100 <= ${budget}
-        AND ${predictions.lastClose} >= 100
-        AND ABS(${predictions.expectedReturnPct}) <= 30`,
+      sql`${predictions.modelName} = ${model}
+        AND ${currentClose} IS NOT NULL
+        AND ${currentClose} * 100 <= ${budget}
+        AND ${currentClose} >= 100
+        AND ABS(${returnPct}) <= 30`,
     )
     .orderBy(order)
-    .limit(limit);
+    .limit(fetchLimit);
 
-  return c.json({ items: rows, budget, sort, limit });
+  const items = rows.map((r) => {
+    const preds: Record<string, number | null> = {
+      lstm_v1: r.predLstm,
+      sma_cross_v1: r.predSma,
+      rsi_reversal_v1: r.predRsi,
+    };
+    const selectedDir = Math.sign(r.predictedClose - r.currentClose);
+    let agreement = 0;
+    for (const m of ALL_MODELS) {
+      const p = preds[m];
+      if (p == null) continue;
+      if (Math.sign(p - r.currentClose) === selectedDir && selectedDir !== 0) agreement++;
+    }
+    return {
+      code: r.code,
+      name: r.name,
+      market: r.market,
+      modelName: r.modelName,
+      currentClose: r.currentClose,
+      currentDate: r.currentDate,
+      predictedClose: r.predictedClose,
+      expectedReturnPct: r.expectedReturnPct,
+      lastDate: r.lastDate,
+      runAt: r.runAt,
+      buyableLots: r.buyableLots,
+      expectedProfitYen: r.expectedProfitYen,
+      predictionsByModel: preds,
+      agreement,
+      agreementTotal: ALL_MODELS.length,
+    };
+  });
+
+  const filtered = minAgreement > 0
+    ? items.filter((it) => it.agreement >= minAgreement)
+    : items;
+
+  return c.json({
+    items: filtered.slice(0, limit),
+    budget,
+    sort,
+    limit,
+    model,
+    minAgreement,
+  });
 });
 
 app.get("/api/backtest", async (c) => {

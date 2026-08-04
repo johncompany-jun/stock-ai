@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { readdirSync, statSync } from "node:fs";
 import { parseArgs } from "node:util";
 import * as tf from "@tensorflow/tfjs";
+import { ALL_MODEL_KEYS, buildModel, type ModelKey } from "./models";
 
 const { values } = parseArgs({
   options: {
@@ -31,9 +32,16 @@ const EPOCHS = Number(values.epochs);
 const UNITS = Number(values.units);
 const MIN_RANGE = Number(values.minRange);
 const LOOKBACK_YEARS = Number(values.lookbackYears);
-const MODEL_NAME = values.model!;
+const MODEL_KEY = values.model as ModelKey;
 const SEED = Number(values.seed);
 const TRAIN_CANDLES = Number(values.trainCandles);
+
+if (!ALL_MODEL_KEYS.includes(MODEL_KEY)) {
+  console.error(`unknown model: ${MODEL_KEY}. use one of: ${ALL_MODEL_KEYS.join(", ")}`);
+  process.exit(1);
+}
+
+const model = buildModel(MODEL_KEY, { window: WINDOW, epochs: EPOCHS, units: UNITS });
 
 const findSqlitePath = (): string => {
   const dir = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
@@ -64,43 +72,6 @@ const shuffle = <T>(arr: T[], rng: () => number): T[] => {
   return a;
 };
 
-const trainAndPredict = async (normalized: number[], horizon: number): Promise<number[]> => {
-  const xs: number[][][] = [];
-  const ys: number[][] = [];
-  for (let i = 0; i <= normalized.length - WINDOW - 1; i++) {
-    xs.push(normalized.slice(i, i + WINDOW).map((v) => [v]));
-    ys.push([normalized[i + WINDOW]]);
-  }
-  const xsT = tf.tensor3d(xs, [xs.length, WINDOW, 1]);
-  const ysT = tf.tensor2d(ys, [ys.length, 1]);
-
-  const model = tf.sequential({
-    layers: [
-      tf.layers.lstm({ units: UNITS, inputShape: [WINDOW, 1] }),
-      tf.layers.dense({ units: 1 }),
-    ],
-  });
-  model.compile({ optimizer: tf.train.adam(0.01), loss: "meanSquaredError" });
-  await model.fit(xsT, ysT, { epochs: EPOCHS, batchSize: 32, shuffle: true, verbose: 0 });
-
-  const window = normalized.slice(-WINDOW);
-  const preds: number[] = [];
-  for (let i = 0; i < horizon; i++) {
-    const input = tf.tensor3d([window.map((v) => [v])], [1, WINDOW, 1]);
-    const p = model.predict(input) as tf.Tensor;
-    const val = (await p.data())[0];
-    preds.push(val);
-    window.shift();
-    window.push(val);
-    input.dispose();
-    p.dispose();
-  }
-  xsT.dispose();
-  ysT.dispose();
-  model.dispose();
-  return preds;
-};
-
 const pickEvenIndexes = (start: number, endExclusive: number, n: number): number[] => {
   if (endExclusive - start <= 0) return [];
   if (endExclusive - start <= n) {
@@ -115,10 +86,14 @@ const pickEvenIndexes = (start: number, endExclusive: number, n: number): number
 };
 
 const main = async () => {
-  await tf.setBackend("cpu");
-  await tf.ready();
-  console.log(`tfjs backend: ${tf.getBackend()}`);
-  console.log(`config: stocks=${N_STOCKS} dates=${N_DATES} horizons=[${HORIZONS.join(",")}] markets=[${MARKETS.join(",")}] minRange=${MIN_RANGE}`);
+  if (MODEL_KEY === "lstm_v1") {
+    await tf.setBackend("cpu");
+    await tf.ready();
+    console.log(`tfjs backend: ${tf.getBackend()}`);
+  }
+  console.log(
+    `config: model=${model.name} stocks=${N_STOCKS} dates=${N_DATES} horizons=[${HORIZONS.join(",")}] markets=[${MARKETS.join(",")}] minRange=${MIN_RANGE}`,
+  );
 
   const sqlitePath = findSqlitePath();
   console.log(`sqlite: ${sqlitePath}`);
@@ -156,7 +131,7 @@ const main = async () => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
-  const minTrainRows = Math.max(WINDOW + 10, TRAIN_CANDLES);
+  const minTrainRows = Math.max(model.minCandles, TRAIN_CANDLES);
   let totalRuns = 0;
   let totalInserts = 0;
   let skippedStocks = 0;
@@ -182,21 +157,11 @@ const main = async () => {
       const trainStart = Math.max(0, runIdx + 1 - TRAIN_CANDLES);
       const trainCloses = candles.slice(trainStart, runIdx + 1).map((c) => c.close);
 
-      let min = Infinity;
-      let max = -Infinity;
-      for (const v of trainCloses) {
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      const span = max - min || 1;
-      const normalized = trainCloses.map((v) => (v - min) / span);
-
       let preds: number[];
       try {
-        const raw = await trainAndPredict(normalized, MAX_HORIZON);
-        preds = raw.map((v) => v * span + min);
+        preds = await model.predict(trainCloses, MAX_HORIZON);
       } catch (e) {
-        console.warn(`    runDate=${runDate}: train failed: ${(e as Error).message}`);
+        console.warn(`    runDate=${runDate}: predict failed: ${(e as Error).message}`);
         continue;
       }
       totalRuns++;
@@ -215,7 +180,7 @@ const main = async () => {
           code,
           runDate,
           h,
-          MODEL_NAME,
+          model.name,
           lastClose,
           predictedClose,
           actualClose,
@@ -241,7 +206,7 @@ const main = async () => {
 
   const elapsed = (Date.now() - t0) / 1000;
   console.log(
-    `\ndone: stocks_ok=${codes.length - skippedStocks} skipped=${skippedStocks}  training_runs=${totalRuns}  inserts=${totalInserts}  in ${elapsed.toFixed(1)}s`,
+    `\ndone: model=${model.name} stocks_ok=${codes.length - skippedStocks} skipped=${skippedStocks}  runs=${totalRuns}  inserts=${totalInserts}  in ${elapsed.toFixed(1)}s`,
   );
   db.close();
 };
