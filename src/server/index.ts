@@ -152,8 +152,9 @@ const fetchEnsembleWeights = async (
 };
 
 const computeEnsemblePrediction = (
-  lastClose: number,
+  currentClose: number,
   perModelPreds: Record<(typeof ALL_MODELS)[number], number | null>,
+  perModelLastClose: Record<(typeof ALL_MODELS)[number], number | null>,
   weights: EnsembleWeights,
 ): number => {
   let num = 0;
@@ -161,10 +162,12 @@ const computeEnsemblePrediction = (
   for (const m of ALL_MODELS) {
     const p = perModelPreds[m];
     if (p == null) continue;
+    const lc = perModelLastClose[m];
+    if (lc != null && p === lc) continue;
     num += weights[m] * p;
     den += weights[m];
   }
-  return den > 0 ? num / den : lastClose;
+  return den > 0 ? num / den : currentClose;
 };
 
 const computeConfidence = (
@@ -239,10 +242,18 @@ app.get("/api/rankings", async (c) => {
     SELECT p2.predicted_close FROM predictions p2
     WHERE p2.code = ${predictions.code} AND p2.model_name = ${name}
   )`;
+  const lastCloseByModel = (name: string) => sql<number | null>`(
+    SELECT p2.last_close FROM predictions p2
+    WHERE p2.code = ${predictions.code} AND p2.model_name = ${name}
+  )`;
   const predLstm = predByModel("lstm_v1");
   const predSma = predByModel("sma_cross_v1");
   const predRsi = predByModel("rsi_reversal_v1");
   const predVol = predByModel("volume_breakout_v1");
+  const lastLstm = lastCloseByModel("lstm_v1");
+  const lastSma = lastCloseByModel("sma_cross_v1");
+  const lastRsi = lastCloseByModel("rsi_reversal_v1");
+  const lastVol = lastCloseByModel("volume_breakout_v1");
 
   const returnPct = sql<number>`((${predictions.predictedClose} - ${currentClose}) / ${currentClose}) * 100`;
   const lots = sql<number>`CAST(${budget} / (${currentClose} * 100) AS INTEGER)`;
@@ -278,6 +289,10 @@ app.get("/api/rankings", async (c) => {
       predSma,
       predRsi,
       predVol,
+      lastLstm,
+      lastSma,
+      lastRsi,
+      lastVol,
     })
     .from(predictions)
     .innerJoin(stocks, eq(stocks.code, predictions.code))
@@ -298,9 +313,16 @@ app.get("/api/rankings", async (c) => {
     let expectedProfitYen = r.expectedProfitYen;
     const buyableLots = r.buyableLots;
     if (isEnsemble && ensembleWeights) {
+      const perModelLast: Record<string, number | null> = {
+        lstm_v1: r.lastLstm,
+        sma_cross_v1: r.lastSma,
+        rsi_reversal_v1: r.lastRsi,
+        volume_breakout_v1: r.lastVol,
+      };
       predictedClose = computeEnsemblePrediction(
         r.currentClose,
         preds as Record<(typeof ALL_MODELS)[number], number | null>,
+        perModelLast as Record<(typeof ALL_MODELS)[number], number | null>,
         ensembleWeights,
       );
       expectedReturnPct = ((predictedClose - r.currentClose) / r.currentClose) * 100;
