@@ -98,13 +98,17 @@ type AgreementBucket = {
   hitPct: number;
 };
 type AgreementResponse = { model: string; buckets: AgreementBucket[] };
-const MODEL_OPTIONS: Array<{ key: string; label: string; shortLabel: string }> = [
+type ModelOption = { key: string; label: string; shortLabel: string; ensemble?: boolean };
+const MODEL_OPTIONS: ModelOption[] = [
+  { key: "ensemble_v1", label: "アンサンブル (加重平均)", shortLabel: "MIX", ensemble: true },
   { key: "lstm_v1", label: "LSTM (深層学習)", shortLabel: "LSTM" },
   { key: "sma_cross_v1", label: "SMAクロス (移動平均)", shortLabel: "SMA" },
   { key: "rsi_reversal_v1", label: "RSI逆張り", shortLabel: "RSI" },
   { key: "volume_breakout_v1", label: "出来高ブレイク", shortLabel: "VOL" },
 ];
-const selectedModel = ref<string>("lstm_v1");
+const BACKTEST_MODEL_OPTIONS = MODEL_OPTIONS.filter((m) => !m.ensemble);
+const selectedModel = ref<string>("ensemble_v1");
+const selectedBacktestModel = ref<string>("lstm_v1");
 const AGREEMENT_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 0, label: "全て" },
   { value: 2, label: "2以上" },
@@ -122,7 +126,7 @@ const fetchBacktest = async () => {
   backtestLoading.value = true;
   backtestError.value = null;
   try {
-    const params = new URLSearchParams({ model: selectedModel.value });
+    const params = new URLSearchParams({ model: selectedBacktestModel.value });
     const [r1, r2] = await Promise.all([
       fetch(`/api/backtest?${params}`),
       fetch(`/api/backtest-agreement?${params}`),
@@ -406,6 +410,8 @@ onMounted(async () => {
 
 watch([budget, sortMode, selectedModel, minAgreement], () => {
   fetchRankings();
+});
+watch(selectedBacktestModel, () => {
   fetchBacktest();
 });
 
@@ -545,8 +551,8 @@ const expectedProfit = computed(() => {
         <div class="backtest-controls">
           <label class="backtest-model-label">
             モデル
-            <select v-model="selectedModel" @change="fetchBacktest" class="backtest-model-select">
-              <option v-for="m in MODEL_OPTIONS" :key="m.key" :value="m.key">{{ m.label }}</option>
+            <select v-model="selectedBacktestModel" class="backtest-model-select">
+              <option v-for="m in BACKTEST_MODEL_OPTIONS" :key="m.key" :value="m.key">{{ m.label }}</option>
             </select>
           </label>
           <span v-if="backtest?.meta" class="backtest-meta">

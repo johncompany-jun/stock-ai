@@ -112,6 +112,61 @@ const ALL_MODELS = [
   "volume_breakout_v1",
 ] as const;
 
+const ENSEMBLE_MODEL = "ensemble_v1";
+const ENSEMBLE_WEIGHT_HORIZON = 20;
+const ENSEMBLE_MIN_SAMPLES = 20;
+
+type EnsembleWeights = Record<(typeof ALL_MODELS)[number], number>;
+
+const fetchEnsembleWeights = async (
+  db: ReturnType<typeof drizzle>,
+): Promise<EnsembleWeights> => {
+  const rows = (await db
+    .select({
+      modelName: predictionLog.modelName,
+      hitPct: sql<number>`AVG(${predictionLog.directionHit}) * 100`,
+      n: sql<number>`COUNT(*)`,
+    })
+    .from(predictionLog)
+    .where(
+      sql`${predictionLog.horizonDays} = ${ENSEMBLE_WEIGHT_HORIZON}
+          AND ${predictionLog.directionHit} IS NOT NULL
+          AND ${predictionLog.predictedClose} != ${predictionLog.lastClose}`,
+    )
+    .groupBy(predictionLog.modelName)) as Array<{
+      modelName: string;
+      hitPct: number;
+      n: number;
+    }>;
+
+  const weights = {} as EnsembleWeights;
+  for (const m of ALL_MODELS) weights[m] = 0;
+  for (const r of rows) {
+    if (!ALL_MODELS.includes(r.modelName as (typeof ALL_MODELS)[number])) continue;
+    weights[r.modelName as (typeof ALL_MODELS)[number]] =
+      r.n >= ENSEMBLE_MIN_SAMPLES ? Math.max(0, r.hitPct - 50) : 0;
+  }
+  const total = ALL_MODELS.reduce((s, m) => s + weights[m], 0);
+  if (total === 0) for (const m of ALL_MODELS) weights[m] = 1;
+  return weights;
+};
+
+const computeEnsemblePrediction = (
+  lastClose: number,
+  perModelPreds: Record<(typeof ALL_MODELS)[number], number | null>,
+  weights: EnsembleWeights,
+): number => {
+  let num = 0;
+  let den = 0;
+  for (const m of ALL_MODELS) {
+    const p = perModelPreds[m];
+    if (p == null) continue;
+    num += weights[m] * p;
+    den += weights[m];
+  }
+  return den > 0 ? num / den : lastClose;
+};
+
 const computeConfidence = (
   currentClose: number,
   selectedPrediction: number,
@@ -161,7 +216,14 @@ app.get("/api/rankings", async (c) => {
     ALL_MODELS.length,
     Math.max(0, Number(c.req.query("minAgreement") ?? "0")),
   );
-  const fetchLimit = minAgreement > 0 ? Math.min(limit * 10, 500) : limit;
+  const isEnsemble = model === ENSEMBLE_MODEL;
+  const carrierModel = isEnsemble ? "lstm_v1" : model;
+  const ensembleWeights = isEnsemble ? await fetchEnsembleWeights(db) : null;
+  const fetchLimit = isEnsemble
+    ? 800
+    : minAgreement > 0
+      ? Math.min(limit * 10, 500)
+      : limit;
 
   const currentClose = sql<number>`(
     SELECT c.close FROM candles c
@@ -187,6 +249,17 @@ app.get("/api/rankings", async (c) => {
   const profit = sql<number>`(${predictions.predictedClose} - ${currentClose}) * 100 * ${lots}`;
   const order = sort === "return" ? sql`${returnPct} DESC` : sql`${profit} DESC`;
 
+  const whereClause = isEnsemble
+    ? sql`${predictions.modelName} = ${carrierModel}
+        AND ${currentClose} IS NOT NULL
+        AND ${currentClose} * 100 <= ${budget}
+        AND ${currentClose} >= 100`
+    : sql`${predictions.modelName} = ${carrierModel}
+        AND ${currentClose} IS NOT NULL
+        AND ${currentClose} * 100 <= ${budget}
+        AND ${currentClose} >= 100
+        AND ABS(${returnPct}) <= 30`;
+
   const rows = await db
     .select({
       code: predictions.code,
@@ -208,13 +281,7 @@ app.get("/api/rankings", async (c) => {
     })
     .from(predictions)
     .innerJoin(stocks, eq(stocks.code, predictions.code))
-    .where(
-      sql`${predictions.modelName} = ${model}
-        AND ${currentClose} IS NOT NULL
-        AND ${currentClose} * 100 <= ${budget}
-        AND ${currentClose} >= 100
-        AND ABS(${returnPct}) <= 30`,
-    )
+    .where(whereClause)
     .orderBy(order)
     .limit(fetchLimit);
 
@@ -225,21 +292,36 @@ app.get("/api/rankings", async (c) => {
       rsi_reversal_v1: r.predRsi,
       volume_breakout_v1: r.predVol,
     };
+    let displayModelName = r.modelName;
+    let predictedClose = r.predictedClose;
+    let expectedReturnPct = r.expectedReturnPct;
+    let expectedProfitYen = r.expectedProfitYen;
+    const buyableLots = r.buyableLots;
+    if (isEnsemble && ensembleWeights) {
+      predictedClose = computeEnsemblePrediction(
+        r.currentClose,
+        preds as Record<(typeof ALL_MODELS)[number], number | null>,
+        ensembleWeights,
+      );
+      expectedReturnPct = ((predictedClose - r.currentClose) / r.currentClose) * 100;
+      expectedProfitYen = (predictedClose - r.currentClose) * 100 * buyableLots;
+      displayModelName = ENSEMBLE_MODEL;
+    }
     const perModel = ALL_MODELS.map((m) => preds[m] ?? null);
-    const conf = computeConfidence(r.currentClose, r.predictedClose, perModel);
+    const conf = computeConfidence(r.currentClose, predictedClose, perModel);
     return {
       code: r.code,
       name: r.name,
       market: r.market,
-      modelName: r.modelName,
+      modelName: displayModelName,
       currentClose: r.currentClose,
       currentDate: r.currentDate,
-      predictedClose: r.predictedClose,
-      expectedReturnPct: r.expectedReturnPct,
+      predictedClose,
+      expectedReturnPct,
       lastDate: r.lastDate,
       runAt: r.runAt,
-      buyableLots: r.buyableLots,
-      expectedProfitYen: r.expectedProfitYen,
+      buyableLots,
+      expectedProfitYen,
       predictionsByModel: preds,
       agreement: conf.agreement,
       agreementTotal: conf.agreementTotal,
@@ -248,9 +330,16 @@ app.get("/api/rankings", async (c) => {
     };
   });
 
-  const filtered = minAgreement > 0
-    ? items.filter((it) => it.agreement >= minAgreement)
-    : items;
+  let filtered = items;
+  if (isEnsemble) {
+    filtered = filtered.filter((it) => Math.abs(it.expectedReturnPct) <= 30);
+    filtered.sort((a, b) =>
+      sort === "return"
+        ? b.expectedReturnPct - a.expectedReturnPct
+        : b.expectedProfitYen - a.expectedProfitYen,
+    );
+  }
+  if (minAgreement > 0) filtered = filtered.filter((it) => it.agreement >= minAgreement);
 
   return c.json({
     items: filtered.slice(0, limit),
@@ -259,6 +348,7 @@ app.get("/api/rankings", async (c) => {
     limit,
     model,
     minAgreement,
+    ensembleWeights: isEnsemble ? ensembleWeights : undefined,
   });
 });
 
