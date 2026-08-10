@@ -1,6 +1,9 @@
 name: Backtest all models
 
 on:
+  schedule:
+    # JST 日曜 06:00 = UTC 土曜 21:00 (daily-candles は UTC 16:00 なので干渉なし)
+    - cron: "0 21 * * 6"
   workflow_dispatch:
     inputs:
       stocks:
@@ -10,8 +13,8 @@ on:
         description: "Run dates per stock"
         default: "30"
       seed:
-        description: "RNG seed (same seed → same stock sample across models)"
-        default: "42"
+        description: "RNG seed (blank on cron → weekly-rotating seed for sample accumulation)"
+        default: ""
       skip_lstm:
         description: "Skip LSTM (slowest; skip for a fast SMA/RSI/Volume refresh)"
         type: boolean
@@ -29,9 +32,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       SOURCE_URL: https://stock-ai.uk
-      STOCKS: ${{ inputs.stocks }}
-      DATES: ${{ inputs.dates }}
-      SEED: ${{ inputs.seed }}
+      STOCKS: ${{ inputs.stocks || '50' }}
+      DATES: ${{ inputs.dates || '30' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +43,17 @@ jobs:
 
       - name: Install deps
         run: bun install --frozen-lockfile
+
+      - name: Resolve SEED
+        run: |
+          if [ -n "${{ inputs.seed }}" ]; then
+            echo "SEED=${{ inputs.seed }}" >> "$GITHUB_ENV"
+          else
+            # cron / blank input: rotate weekly (ISO year+week) so each run picks a fresh sample
+            SEED="$(date -u +%G%V)"
+            echo "SEED=$SEED" >> "$GITHUB_ENV"
+            echo "using weekly-rotating SEED=$SEED"
+          fi
 
       - name: Backtest (SMA cross)
         run: >
