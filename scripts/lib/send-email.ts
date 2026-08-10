@@ -15,7 +15,7 @@ export const sendEmail = async (input: SendEmailInput): Promise<SendEmailResult>
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY is not set");
 
-  const from = input.from ?? process.env.EMAIL_FROM ?? "noreply@stock-ai.uk";
+  const from = input.from ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
 
   const body: Record<string, unknown> = {
     from,

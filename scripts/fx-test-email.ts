@@ -22,7 +22,7 @@ const html = `
   <p>Resend 経由の疎通テストです。</p>
   <ul>
     <li>送信時刻 (JST): ${jst}</li>
-    <li>from: ${values.from ?? process.env.EMAIL_FROM ?? "noreply@stock-ai.uk"}</li>
+    <li>from: ${values.from ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev"}</li>
     <li>to: ${to}</li>
   </ul>
   <p>このメールが届けば FX Phase 3 の配信基盤は稼働可能です。</p>
