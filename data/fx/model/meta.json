@@ -1,0 +1,9 @@
+{
+  "pair": "USDJPY",
+  "tp_pips": 20,
+  "sl_pips": 20,
+  "train_end": "2024-12-31",
+  "seeds": 5,
+  "epochs": 80,
+  "saved_at": "2026-08-10T07:27:17.286Z"
+}
