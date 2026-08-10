@@ -82,3 +82,22 @@ export const predictionLog = sqliteTable(
 );
 
 export type PredictionLog = typeof predictionLog.$inferSelect;
+
+export const fxCandles = sqliteTable(
+  "fx_candles",
+  {
+    pair: text("pair").notNull(),
+    timestampUtc: integer("timestamp_utc").notNull(),
+    open: real("open").notNull(),
+    high: real("high").notNull(),
+    low: real("low").notNull(),
+    close: real("close").notNull(),
+    volume: real("volume").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.pair, t.timestampUtc] }),
+    pairIdx: index("fx_candles_pair_idx").on(t.pair),
+  }),
+);
+
+export type FxCandle = typeof fxCandles.$inferSelect;

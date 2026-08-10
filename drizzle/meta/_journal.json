@@ -36,6 +36,13 @@
       "when": 1785813504299,
       "tag": "0004_add_model_to_predictions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786342253578,
+      "tag": "0005_add_fx_candles",
+      "breakpoints": true
     }
   ]
 }
