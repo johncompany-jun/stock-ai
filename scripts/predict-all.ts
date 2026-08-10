@@ -10,6 +10,7 @@ const { values } = parseArgs({
   options: {
     codes: { type: "string" },
     limit: { type: "string" },
+    shard: { type: "string" },
     horizon: { type: "string", default: "21" },
     window: { type: "string", default: "30" },
     epochs: { type: "string", default: "20" },
@@ -170,6 +171,21 @@ const main = async () => {
     codes = requestedCodes;
   } else {
     codes = await source.listCodes();
+  }
+  if (values.shard) {
+    const m = values.shard.match(/^(\d+)\/(\d+)$/);
+    if (!m) {
+      console.error(`invalid --shard: ${values.shard} (expected N/TOTAL, e.g. 0/4)`);
+      process.exit(1);
+    }
+    const index = Number(m[1]);
+    const total = Number(m[2]);
+    if (total <= 0 || index < 0 || index >= total) {
+      console.error(`invalid --shard values: index=${index} total=${total}`);
+      process.exit(1);
+    }
+    codes = codes.filter((_, i) => i % total === index);
+    console.log(`shard ${index}/${total}: ${codes.length} codes`);
   }
   if (values.limit) codes = codes.slice(0, Number(values.limit));
 
