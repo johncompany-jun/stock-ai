@@ -1,7 +1,16 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { sendEmail } from "./lib/send-email";
-import { dowFromJst, dowLabel, jstDateStrParts, predict, todayJstDate, type PredictResult } from "./lib/fx-predict";
+import {
+  dowFromJst,
+  dowLabel,
+  jstDateStrParts,
+  localCandleSource,
+  predict,
+  remoteCandleSource,
+  todayJstDate,
+  type PredictResult,
+} from "./lib/fx-predict";
 
 const { values } = parseArgs({
   options: {
@@ -10,6 +19,7 @@ const { values } = parseArgs({
     k: { type: "string", default: "10" },
     modelDir: { type: "string", default: "data/fx/model" },
     to: { type: "string" },
+    remote: { type: "boolean", default: false },
     dryRun: { type: "boolean", default: false },
   },
 });
@@ -152,6 +162,19 @@ const buildHtml = (r: PredictResult): string => {
 </body></html>`;
 };
 
+const buildSource = () => {
+  if (!values.remote) return localCandleSource();
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !databaseId || !apiToken) {
+    throw new Error(
+      "remote モードには CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_API_TOKEN が必要です",
+    );
+  }
+  return remoteCandleSource({ accountId, databaseId, apiToken });
+};
+
 const main = async () => {
   const date = values.date ?? todayJstDate();
   const [y, m1, d] = jstDateStrParts(date);
@@ -165,7 +188,7 @@ const main = async () => {
     process.exit(1);
   }
 
-  const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K });
+  const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K, source: buildSource() });
   const subject = buildSubject(r);
   const text = buildText(r);
   const html = buildHtml(r);

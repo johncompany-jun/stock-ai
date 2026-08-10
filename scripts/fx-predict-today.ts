@@ -1,6 +1,14 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { dowFromJst, dowLabel, jstDateStrParts, predict, todayJstDate } from "./lib/fx-predict";
+import {
+  dowFromJst,
+  dowLabel,
+  jstDateStrParts,
+  localCandleSource,
+  predict,
+  remoteCandleSource,
+  todayJstDate,
+} from "./lib/fx-predict";
 
 const { values } = parseArgs({
   options: {
@@ -8,12 +16,26 @@ const { values } = parseArgs({
     date: { type: "string" },
     k: { type: "string", default: "10" },
     modelDir: { type: "string", default: "data/fx/model" },
+    remote: { type: "boolean", default: false },
   },
 });
 
 const PAIR = values.pair.toUpperCase();
 const K = Number(values.k);
 const MODEL_DIR = resolve(process.cwd(), values.modelDir);
+
+const buildSource = () => {
+  if (!values.remote) return localCandleSource();
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !databaseId || !apiToken) {
+    throw new Error(
+      "remote モードには CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_API_TOKEN が必要です",
+    );
+  }
+  return remoteCandleSource({ accountId, databaseId, apiToken });
+};
 
 const main = async () => {
   const date = values.date ?? todayJstDate();
@@ -24,7 +46,7 @@ const main = async () => {
     process.exit(1);
   }
 
-  const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K });
+  const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K, source: buildSource() });
   const { features: f, neighbors: scored, direction, confidence, probability: prob } = r;
 
   console.log(`=== FX シグナル [${PAIR}]  ${date} (${dowLabel(dow)})  8:30 JST ===\n`);

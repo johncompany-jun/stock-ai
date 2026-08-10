@@ -1,0 +1,48 @@
+name: Daily FX signal email
+
+on:
+  schedule:
+    # JST 08:32 = UTC 23:32 前日 (平日、8:30 JST の 1 分足がある想定)
+    - cron: "32 23 * * 0-4"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Prediction date (YYYY-MM-DD, JST). Empty = today JST."
+        required: false
+
+concurrency:
+  group: daily-fx-signal
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_DATABASE_ID: a40fd260-c66d-433d-9739-2e8222304033
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Refresh yfinance candles for USD/JPY (last 2 days)
+        run: >
+          bun run scripts/fx-update-yfinance.ts
+          --pair USDJPY --symbol "JPY=X"
+          --daysBack 2
+          --remote
+
+      - name: Send FX signal email
+        run: >
+          bun run scripts/fx-send-signal.ts
+          --pair USDJPY --remote
+          ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
