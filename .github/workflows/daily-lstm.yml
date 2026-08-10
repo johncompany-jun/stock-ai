@@ -1,0 +1,50 @@
+name: Daily LSTM predictions
+
+on:
+  workflow_run:
+    workflows: ["Daily candles update"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max stocks to predict (blank = all)"
+        default: ""
+
+concurrency:
+  group: daily-lstm
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SOURCE_URL: https://stock-ai.uk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Predict (LSTM) all stocks and apply to remote D1
+        run: >
+          bun run scripts/predict-all.ts
+          --model lstm_v1
+          --sourceUrl "$SOURCE_URL"
+          --days 365 --chunk 200
+          ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+          --apply --remote
+
+      - name: Summary
+        if: always()
+        run: |
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT model_name, COUNT(*) AS n, datetime(MAX(run_at), 'unixepoch', '+9 hours') AS latest_jst FROM predictions WHERE model_name = 'lstm_v1' GROUP BY model_name"
