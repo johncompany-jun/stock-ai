@@ -101,3 +101,26 @@ export const fxCandles = sqliteTable(
 );
 
 export type FxCandle = typeof fxCandles.$inferSelect;
+
+export const fxFeatures = sqliteTable(
+  "fx_features",
+  {
+    pair: text("pair").notNull(),
+    date: text("date").notNull(),
+    entryTsUtc: integer("entry_ts_utc").notNull(),
+    entryPrice: real("entry_price").notNull(),
+    nyDeltaPips: real("ny_delta_pips"),
+    morningTrendBps: real("morning_trend_bps"),
+    gotoubiFlag: integer("gotoubi_flag").notNull(),
+    dow: integer("dow").notNull(),
+    label995Pips: real("label_995_pips"),
+    tpHitMin: integer("tp_hit_min"),
+    slHitMin: integer("sl_hit_min"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.pair, t.date] }),
+    dateIdx: index("fx_features_date_idx").on(t.date),
+  }),
+);
+
+export type FxFeature = typeof fxFeatures.$inferSelect;
