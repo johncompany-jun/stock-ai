@@ -545,22 +545,25 @@ const expectedProfit = computed(() => {
       </table>
     </section>
 
-    <section class="backtest-panel">
-      <header class="backtest-header">
-        <h2>バックテスト精度 <span class="backtest-tag">検証中</span></h2>
-        <div class="backtest-controls">
-          <label class="backtest-model-label">
-            モデル
-            <select v-model="selectedBacktestModel" class="backtest-model-select">
-              <option v-for="m in BACKTEST_MODEL_OPTIONS" :key="m.key" :value="m.key">{{ m.label }}</option>
-            </select>
-          </label>
-          <span v-if="backtest?.meta" class="backtest-meta">
-            {{ backtest.meta.rows.toLocaleString() }} 予測 / {{ backtest.meta.stocks }} 銘柄 /
-            {{ backtest.meta.runDates }} 日付
-          </span>
-        </div>
-      </header>
+    <details class="backtest-panel">
+      <summary class="backtest-summary">
+        <span class="backtest-summary-title">
+          バックテスト精度 <span class="backtest-tag">検証中</span>
+        </span>
+        <span v-if="backtest?.meta" class="backtest-meta">
+          {{ backtest.meta.rows.toLocaleString() }} 予測 / {{ backtest.meta.stocks }} 銘柄 /
+          {{ backtest.meta.runDates }} 日付
+        </span>
+        <span class="backtest-toggle-hint"></span>
+      </summary>
+      <div class="backtest-controls">
+        <label class="backtest-model-label">
+          モデル
+          <select v-model="selectedBacktestModel" class="backtest-model-select">
+            <option v-for="m in BACKTEST_MODEL_OPTIONS" :key="m.key" :value="m.key">{{ m.label }}</option>
+          </select>
+        </label>
+      </div>
       <div v-if="backtestLoading" class="ranking-msg">読み込み中...</div>
       <div v-else-if="backtestError" class="ranking-msg">エラー: {{ backtestError }}</div>
       <div v-else-if="!backtest?.byHorizon.length" class="ranking-msg">
@@ -637,7 +640,7 @@ const expectedProfit = computed(() => {
           </div>
         </div>
       </div>
-    </section>
+    </details>
 
     <section v-if="selected" ref="chartPanel" class="chart-panel">
       <header>
@@ -1113,18 +1116,38 @@ tbody tr.active {
   margin-bottom: 1rem;
   background: #fff;
 }
-.backtest-header {
+.backtest-summary {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
 }
-.backtest-header h2 {
+.backtest-summary::-webkit-details-marker {
+  display: none;
+}
+.backtest-summary-title {
   font-size: 1rem;
-  margin: 0;
   font-weight: 600;
+}
+.backtest-toggle-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #2563eb;
+}
+.backtest-toggle-hint::after {
+  content: "詳細を開く";
+}
+.backtest-panel[open] .backtest-toggle-hint::after {
+  content: "詳細を閉じる";
+}
+.backtest-summary:hover .backtest-toggle-hint {
+  text-decoration: underline;
+}
+.backtest-panel[open] .backtest-summary {
+  margin-bottom: 0.5rem;
 }
 .backtest-tag {
   display: inline-block;
