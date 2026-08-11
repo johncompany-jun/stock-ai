@@ -113,7 +113,7 @@ const ALL_MODELS = [
 ] as const;
 
 const ENSEMBLE_MODEL = "ensemble_v1";
-const ENSEMBLE_WEIGHT_HORIZON = 20;
+const ENSEMBLE_WEIGHT_HORIZON = 5;
 const ENSEMBLE_MIN_SAMPLES = 20;
 
 type EnsembleWeights = Record<(typeof ALL_MODELS)[number], number>;

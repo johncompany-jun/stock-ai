@@ -11,7 +11,7 @@ const { values } = parseArgs({
     codes: { type: "string" },
     limit: { type: "string" },
     shard: { type: "string" },
-    horizon: { type: "string", default: "21" },
+    horizon: { type: "string", default: "5" },
     window: { type: "string", default: "30" },
     epochs: { type: "string", default: "20" },
     units: { type: "string", default: "16" },

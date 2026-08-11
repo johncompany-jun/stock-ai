@@ -10,7 +10,7 @@ import {
   type Candle,
 } from "./ml/preprocess";
 
-const HORIZON = 21;
+const HORIZON = 5;
 
 Chart.register(...registerables);
 
@@ -444,7 +444,7 @@ const expectedProfit = computed(() => {
 
     <section class="ranking-panel">
       <header class="ranking-header">
-        <h2>予算内ランキング (21営業日後)</h2>
+        <h2>予算内ランキング (5営業日後)</h2>
         <span v-if="rankingsRunAt" class="ranking-meta">予測: {{ fmtRunAt(rankingsRunAt) }}</span>
       </header>
       <div class="ranking-controls">
@@ -652,7 +652,7 @@ const expectedProfit = computed(() => {
         <p v-if="chartLoading" class="verdict-status">読み込み中...</p>
         <p v-else-if="chartError" class="verdict-status error">{{ chartError }}</p>
         <p v-else-if="predicting" class="verdict-status">
-          20日後の予測を計算中... (数秒〜十数秒)
+          5日後の予測を計算中... (数秒〜十数秒)
         </p>
         <p v-else-if="predictionError" class="verdict-status error">{{ predictionError }}</p>
         <div v-else-if="predictionResult" class="verdict">
@@ -662,7 +662,7 @@ const expectedProfit = computed(() => {
               :class="predictionResult.pct >= 0 ? 'up' : 'down'"
             >{{ predictionResult.pct >= 0 ? "↑ 上がる予測" : "↓ 下がる予測" }}</span>
             <div class="verdict-price">
-              <span class="verdict-label">20営業日後の予測</span>
+              <span class="verdict-label">5営業日後の予測</span>
               <span class="verdict-price-value">
                 {{ Math.round(predictionResult.target).toLocaleString()
                 }}<span class="verdict-price-unit">円</span>
