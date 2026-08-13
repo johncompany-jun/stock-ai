@@ -17,4 +17,6 @@ database_id = "a40fd260-c66d-433d-9739-2e8222304033"
 migrations_dir = "drizzle"
 
 [triggers]
-crons = ["32 23 * * 0-4"]
+# 23:32 UTC = 08:32 JST 翌日。UTC の日〜木 = JST の月〜金。
+# Cloudflare の cron パーサーは DoW の数値ゼロを受け付けないため名前で指定。
+crons = ["32 23 * * SUN,MON,TUE,WED,THU"]
