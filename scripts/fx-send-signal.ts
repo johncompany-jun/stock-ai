@@ -27,7 +27,10 @@ const { values } = parseArgs({
 const PAIR = values.pair.toUpperCase();
 const K = Number(values.k);
 const MODEL_DIR = resolve(process.cwd(), values.modelDir);
-const TO = values.to ?? process.env.NOTIFICATION_EMAIL;
+const TO = (values.to ?? process.env.NOTIFICATION_EMAIL ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const sign = (v: number | null, unit = "", digits = 1): string => {
   if (v === null) return "N/A";
@@ -183,7 +186,7 @@ const main = async () => {
     console.error(`skip: ${date} (${dowLabel(dow)}) は週末`);
     process.exit(0);
   }
-  if (!TO) {
+  if (TO.length === 0) {
     console.error("error: NOTIFICATION_EMAIL (env or --to) を設定してください");
     process.exit(1);
   }
@@ -199,7 +202,7 @@ const main = async () => {
   }
 
   const res = await sendEmail({ to: TO, subject, html, text });
-  console.log(`sent  id=${res.id}  to=${TO}  subject=${subject}`);
+  console.log(`sent  id=${res.id}  to=${TO.join(",")}  subject=${subject}`);
 };
 
 await main();
