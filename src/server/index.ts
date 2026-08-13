@@ -5,6 +5,7 @@ import { candles, predictionLog, predictions, stocks } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
+  GITHUB_TOKEN?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -492,4 +493,37 @@ app.get("/api/backtest", async (c) => {
   return c.json({ model: modelName, meta, byHorizon });
 });
 
-export default app;
+const dispatchDailyFxSignal = async (token: string): Promise<void> => {
+  const res = await fetch(
+    "https://api.github.com/repos/johncompany-jun/stock-ai/actions/workflows/daily-fx-signal.yml/dispatches",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "stock-ai-cron",
+      },
+      body: JSON.stringify({ ref: "main" }),
+    },
+  );
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`workflow_dispatch failed: ${res.status} ${res.statusText} ${detail}`);
+  }
+};
+
+export default {
+  fetch: app.fetch,
+  scheduled: async (
+    _event: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext,
+  ) => {
+    if (!env.GITHUB_TOKEN) {
+      console.error("GITHUB_TOKEN secret not set; skipping workflow dispatch");
+      return;
+    }
+    ctx.waitUntil(dispatchDailyFxSignal(env.GITHUB_TOKEN));
+  },
+};

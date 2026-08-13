@@ -1,9 +1,11 @@
 name: Daily FX signal email
 
 on:
-  schedule:
-    # JST 08:32 = UTC 23:32 前日 (平日、8:30 JST の 1 分足がある想定)
-    - cron: "32 23 * * 0-4"
+  # NOTE: GitHub cron scheduler has ~30min delay; triggering moved to
+  # Cloudflare Worker Cron (src/server/index.ts scheduled handler) which calls
+  # workflow_dispatch precisely at 23:32 UTC (08:32 JST).
+  # schedule:
+  #   - cron: "32 23 * * 0-4"
   workflow_dispatch:
     inputs:
       date:

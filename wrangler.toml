@@ -15,3 +15,6 @@ binding = "DB"
 database_name = "stock-ai"
 database_id = "a40fd260-c66d-433d-9739-2e8222304033"
 migrations_dir = "drizzle"
+
+[triggers]
+crons = ["32 23 * * 0-4"]
