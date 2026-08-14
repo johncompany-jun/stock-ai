@@ -26,6 +26,7 @@ jobs:
       CLOUDFLARE_D1_DATABASE_ID: a40fd260-c66d-433d-9739-2e8222304033
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
     steps:
       - uses: actions/checkout@v4
 
