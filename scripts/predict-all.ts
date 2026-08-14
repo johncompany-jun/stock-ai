@@ -78,6 +78,31 @@ const buildLocalSource = (): CandleSource => {
   };
 };
 
+const RETRIABLE_STATUSES = new Set([500, 502, 503, 504]);
+const RETRY_ATTEMPTS = 5;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url: string): Promise<Response> => {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return r;
+      if (!RETRIABLE_STATUSES.has(r.status)) return r;
+      lastErr = new Error(`status ${r.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt === RETRY_ATTEMPTS - 1) break;
+    const backoffMs = 1000 * 2 ** attempt;
+    console.warn(
+      `  fetch retry ${attempt + 1}/${RETRY_ATTEMPTS - 1} in ${backoffMs}ms: ${url} (${(lastErr as Error).message})`,
+    );
+    await sleep(backoffMs);
+  }
+  throw lastErr ?? new Error(`fetchWithRetry: ${url}`);
+};
+
 const buildRemoteSource = (baseUrl: string): CandleSource => {
   const base = baseUrl.replace(/\/$/, "");
   const listCodes = async (): Promise<string[]> => {
@@ -95,7 +120,7 @@ const buildRemoteSource = (baseUrl: string): CandleSource => {
     return codes;
   };
   const getCandles = async (code: string, since: number): Promise<Candle[]> => {
-    const r = await fetch(
+    const r = await fetchWithRetry(
       `${base}/api/candles/${code}?from=${since}&limit=5000`,
     );
     if (!r.ok) throw new Error(`GET /api/candles/${code} failed: ${r.status}`);
@@ -205,7 +230,15 @@ const main = async () => {
   const minRows = Math.max(model.minCandles, WINDOW + 10);
 
   for (const code of codes) {
-    const candles = await source.getCandles(code, since);
+    let candles: Candle[];
+    try {
+      candles = await source.getCandles(code, since);
+    } catch (e) {
+      failed++;
+      done++;
+      console.warn(`  ${code}: fetch failed after retries: ${(e as Error).message}`);
+      continue;
+    }
     if (candles.length < minRows) {
       skipped++;
       done++;
