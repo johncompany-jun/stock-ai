@@ -53,7 +53,7 @@ const main = async () => {
   for (const q of chart.quotes) {
     if (!q.date || q.open == null || q.high == null || q.low == null || q.close == null) continue;
     rows.push({
-      ts: Math.floor(q.date.getTime() / 1000),
+      ts: Math.floor(q.date.getTime() / 1000 / 60) * 60,
       o: q.open,
       h: q.high,
       l: q.low,
