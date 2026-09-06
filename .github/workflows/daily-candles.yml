@@ -2,9 +2,8 @@ name: Daily candles update
 
 on:
   schedule:
-    # 週次: 日曜 UTC 16:00 = 月曜 01:00 JST。金曜大引け後のデータで週次ピック向け。
-    # D1 Free の 100k writes/日 節約のため日次から週次に変更 (2026-08-25)。
-    - cron: "0 16 * * 0"
+    # JST 01:00 = UTC 16:00 (東証大引け 15:00 JST + 反映余裕)
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 concurrency:
