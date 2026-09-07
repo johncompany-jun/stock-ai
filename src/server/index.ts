@@ -171,6 +171,23 @@ const computeEnsemblePrediction = (
   return den > 0 ? num / den : currentClose;
 };
 
+// LSTM が現在値から 5-10% の目標を出し、かつ SMA cross の向きも一致するとき tier A。
+// バックテスト (h=5, n=166 で hit 56%) のスイートスポット。SMA cross の 5日予測は
+// 線形補間の性質で 5%+ を出さないため、SMA には方向一致だけ要求 (magnitude は問わない)。
+const computeConfidenceTier = (
+  currentClose: number,
+  predLstm: number | null,
+  predSma: number | null,
+): "A" | null => {
+  if (predLstm == null || predSma == null || currentClose <= 0) return null;
+  const lstmRet = ((predLstm - currentClose) / currentClose) * 100;
+  const smaRet = ((predSma - currentClose) / currentClose) * 100;
+  const lstmDir = Math.sign(lstmRet);
+  if (lstmDir === 0 || lstmDir !== Math.sign(smaRet)) return null;
+  if (Math.abs(lstmRet) >= 5 && Math.abs(lstmRet) < 10) return "A";
+  return null;
+};
+
 const computeConfidence = (
   currentClose: number,
   selectedPrediction: number,
@@ -332,6 +349,7 @@ app.get("/api/rankings", async (c) => {
     }
     const perModel = ALL_MODELS.map((m) => preds[m] ?? null);
     const conf = computeConfidence(r.currentClose, predictedClose, perModel);
+    const confidenceTier = computeConfidenceTier(r.currentClose, r.predLstm, r.predSma);
     return {
       code: r.code,
       name: r.name,
@@ -350,6 +368,7 @@ app.get("/api/rankings", async (c) => {
       agreementTotal: conf.agreementTotal,
       returnStdevPct: conf.returnStdevPct,
       confidence: conf.confidence,
+      confidenceTier,
     };
   });
 

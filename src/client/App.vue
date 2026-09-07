@@ -68,6 +68,7 @@ type Ranking = {
   agreementTotal: number;
   returnStdevPct: number;
   confidence: number;
+  confidenceTier: "A" | null;
 };
 
 const BUDGET_PRESETS = [50000, 100000, 300000, 500000];
@@ -535,8 +536,13 @@ const expectedProfit = computed(() => {
             <td
               class="num agreement"
               :class="confidenceTier(r.confidence)"
-              :title="`${r.agreement}/${r.agreementTotal} モデル一致 · 予測ばらつき ${r.returnStdevPct.toFixed(1)}%`"
+              :title="`${r.agreement}/${r.agreementTotal} モデル一致 · 予測ばらつき ${r.returnStdevPct.toFixed(1)}%${r.confidenceTier === 'A' ? ' · ★ LSTM 5-10%予測 & SMA方向一致 (バックテスト勝率56%)' : ''}`"
             >
+              <span
+                v-if="r.confidenceTier === 'A'"
+                class="tier-badge tier-a"
+                title="LSTM が 5-10% の変化を予測 & SMA cross も同方向。バックテストで勝率56% (n=166) のスイートスポット"
+              >★</span>
               {{ r.confidence }}
               <span class="agreement-sub">{{ r.agreement }}/{{ r.agreementTotal }}</span>
             </td>
@@ -1051,6 +1057,16 @@ tbody tr.active {
   font-weight: 500;
   opacity: 0.75;
   margin-top: 0.1rem;
+}
+.tier-badge {
+  display: inline-block;
+  margin-right: 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.tier-badge.tier-a {
+  color: #d97706;
+  text-shadow: 0 0 1px rgba(217, 119, 6, 0.35);
 }
 .agreement.conf-high {
   background: #d1fae5;
