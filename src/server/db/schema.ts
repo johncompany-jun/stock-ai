@@ -124,3 +124,33 @@ export const fxFeatures = sqliteTable(
 );
 
 export type FxFeature = typeof fxFeatures.$inferSelect;
+
+export const fxPredictions = sqliteTable(
+  "fx_predictions",
+  {
+    pair: text("pair").notNull(),
+    date: text("date").notNull(),
+    entryPrice: real("entry_price").notNull(),
+    direction: text("direction").notNull(),
+    probability: real("probability").notNull(),
+    confidence: real("confidence").notNull(),
+    longWins: integer("long_wins").notNull(),
+    shortWins: integer("short_wins").notNull(),
+    avgLong: real("avg_long").notNull(),
+    avgShort: real("avg_short").notNull(),
+    k: integer("k").notNull(),
+    seeds: integer("seeds").notNull(),
+    actualLabelPips: real("actual_label_pips"),
+    actualTpHitMin: integer("actual_tp_hit_min"),
+    actualSlHitMin: integer("actual_sl_hit_min"),
+    pnlPips: real("pnl_pips"),
+    hit: integer("hit"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.pair, t.date] }),
+    dateIdx: index("fx_predictions_date_idx").on(t.date),
+  }),
+);
+
+export type FxPrediction = typeof fxPredictions.$inferSelect;

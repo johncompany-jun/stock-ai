@@ -218,6 +218,50 @@ export const computeFeatures = async (
   };
 };
 
+export type Outcome = {
+  entryPrice: number;
+  label995Pips: number | null;
+  tpHitMin: number | null;
+  slHitMin: number | null;
+};
+
+export const computeOutcome = async (
+  source: CandleSource,
+  pair: string,
+  date: string,
+  opts: { tpPips: number; slPips: number },
+): Promise<Outcome | null> => {
+  const [y, m1, d] = jstDateStrParts(date);
+  const entryTs = jstDateToEntryUtcSec(y, m1, d);
+  const winStart = entryTs;
+  const winEnd = entryTs + 85 * 60;
+
+  const bars = await source.fetchWindow(pair, winStart, winEnd);
+  const byTs = new Map<number, Bar>();
+  for (const b of bars) byTs.set(b.ts, b);
+
+  const entryBar = byTs.get(entryTs);
+  if (!entryBar) return null;
+  const entryPrice = entryBar.o;
+
+  const exitBar = byTs.get(entryTs + 85 * 60);
+  const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
+
+  const tpPrice = entryPrice + opts.tpPips / 100;
+  const slPrice = entryPrice - opts.slPips / 100;
+  let tpHitMin: number | null = null;
+  let slHitMin: number | null = null;
+  for (let off = 0; off <= 85; off++) {
+    const bar = byTs.get(entryTs + off * 60);
+    if (!bar) continue;
+    if (tpHitMin === null && bar.h >= tpPrice) tpHitMin = off;
+    if (slHitMin === null && bar.l <= slPrice) slHitMin = off;
+    if (tpHitMin !== null && slHitMin !== null) break;
+  }
+
+  return { entryPrice, label995Pips, tpHitMin, slHitMin };
+};
+
 export const featurize = (
   mt: number | null,
   nd: number | null,
