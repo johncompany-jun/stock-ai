@@ -237,12 +237,13 @@ app.get("/api/rankings", async (c) => {
     ALL_MODELS.length,
     Math.max(0, Number(c.req.query("minAgreement") ?? "0")),
   );
+  const tierAOnly = c.req.query("tierAOnly") === "1";
   const isEnsemble = model === ENSEMBLE_MODEL;
   const carrierModel = isEnsemble ? "lstm_v1" : model;
   const ensembleWeights = isEnsemble ? await fetchEnsembleWeights(db) : null;
   const fetchLimit = isEnsemble
     ? 800
-    : minAgreement > 0
+    : minAgreement > 0 || tierAOnly
       ? Math.min(limit * 10, 500)
       : limit;
 
@@ -382,6 +383,7 @@ app.get("/api/rankings", async (c) => {
     );
   }
   if (minAgreement > 0) filtered = filtered.filter((it) => it.agreement >= minAgreement);
+  if (tierAOnly) filtered = filtered.filter((it) => it.confidenceTier === "A");
 
   return c.json({
     items: filtered.slice(0, limit),
@@ -390,6 +392,7 @@ app.get("/api/rankings", async (c) => {
     limit,
     model,
     minAgreement,
+    tierAOnly,
     ensembleWeights: isEnsemble ? ensembleWeights : undefined,
   });
 });

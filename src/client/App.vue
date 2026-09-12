@@ -117,6 +117,7 @@ const AGREEMENT_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 4, label: "4のみ" },
 ];
 const minAgreement = ref<number>(0);
+const tierAOnly = ref<boolean>(true);
 const backtest = ref<BacktestResponse | null>(null);
 const agreement = ref<AgreementResponse | null>(null);
 const backtestLoading = ref(false);
@@ -170,6 +171,7 @@ const fetchRankings = async () => {
       model: selectedModel.value,
       minAgreement: String(minAgreement.value),
     });
+    if (tierAOnly.value) params.set("tierAOnly", "1");
     const r = await fetch(`/api/rankings?${params}`);
     const j = (await r.json()) as { items: Ranking[] };
     if (my !== rankSeq) return;
@@ -409,7 +411,7 @@ onMounted(async () => {
   fetchBacktest();
 });
 
-watch([budget, sortMode, selectedModel, minAgreement], () => {
+watch([budget, sortMode, selectedModel, minAgreement, tierAOnly], () => {
   fetchRankings();
 });
 watch(selectedBacktestModel, () => {
@@ -493,8 +495,24 @@ const expectedProfit = computed(() => {
             {{ a.label }}
           </button>
         </span>
+        <span class="sort-toggle tier-toggle">
+          <button
+            :class="{ active: tierAOnly }"
+            title="tier A (★): LSTM 5-10%予測 & SMA方向一致。実測ヒット率55.3% (n=615)"
+            @click="tierAOnly = true"
+          >
+            ★のみ
+          </button>
+          <button :class="{ active: !tierAOnly }" @click="tierAOnly = false">
+            全て
+          </button>
+        </span>
       </div>
       <div v-if="rankingsLoading" class="ranking-msg">読み込み中...</div>
+      <div v-else-if="!rankings.length && tierAOnly" class="ranking-msg">
+        今日の tier A (★) ピックはありません。
+        <button class="link-btn" @click="tierAOnly = false">全ピックを表示</button>
+      </div>
       <div v-else-if="!rankings.length" class="ranking-msg">
         該当する銘柄がありません。予算を上げるか、バッチ予測を実行してください。
       </div>
@@ -536,12 +554,12 @@ const expectedProfit = computed(() => {
             <td
               class="num agreement"
               :class="confidenceTier(r.confidence)"
-              :title="`${r.agreement}/${r.agreementTotal} モデル一致 · 予測ばらつき ${r.returnStdevPct.toFixed(1)}%${r.confidenceTier === 'A' ? ' · ★ LSTM 5-10%予測 & SMA方向一致 (バックテスト勝率56%)' : ''}`"
+              :title="`${r.agreement}/${r.agreementTotal} モデル一致 · 予測ばらつき ${r.returnStdevPct.toFixed(1)}%${r.confidenceTier === 'A' ? ' · ★ LSTM 5-10%予測 & SMA方向一致 (実測勝率55.3% n=615)' : ''}`"
             >
               <span
                 v-if="r.confidenceTier === 'A'"
                 class="tier-badge tier-a"
-                title="LSTM が 5-10% の変化を予測 & SMA cross も同方向。バックテストで勝率56% (n=166) のスイートスポット"
+                title="LSTM が 5-10% の変化を予測 & SMA cross も同方向。実測勝率55.3% (n=615) のスイートスポット"
               >★</span>
               {{ r.confidence }}
               <span class="agreement-sub">{{ r.agreement }}/{{ r.agreementTotal }}</span>
@@ -1022,6 +1040,18 @@ tbody tr.active {
   text-align: center;
   padding: 1rem 0;
   font-size: 0.9rem;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0 0.25rem;
+  text-decoration: underline;
+}
+.link-btn:hover {
+  color: #1d4ed8;
 }
 .ranking-table {
   width: 100%;
