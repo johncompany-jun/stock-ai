@@ -58,3 +58,34 @@ jobs:
         run: |
           bunx wrangler d1 execute stock-ai --remote --command \
             "SELECT model_name, COUNT(*) AS n, datetime(MAX(run_at), 'unixepoch', '+9 hours') AS latest_jst FROM predictions WHERE model_name = 'lstm_v1' GROUP BY model_name"
+
+  snapshot:
+    needs: predict
+    if: ${{ needs.predict.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SOURCE_URL: https://stock-ai.uk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Snapshot high-confidence daily picks
+        run: >
+          bun run scripts/snapshot-daily-picks.ts
+          --sourceUrl "$SOURCE_URL"
+          --apply --remote
+
+      - name: Summary
+        if: always()
+        run: |
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT run_date, COUNT(*) AS picks, SUM(CASE WHEN confidence_tier='A' THEN 1 ELSE 0 END) AS tier_a, MAX(confidence) AS max_conf FROM daily_picks GROUP BY run_date ORDER BY run_date DESC LIMIT 5"

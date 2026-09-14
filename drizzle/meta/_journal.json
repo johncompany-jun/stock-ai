@@ -57,6 +57,13 @@
       "when": 1788828379698,
       "tag": "0007_misty_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789390988820,
+      "tag": "0008_mysterious_stryfe",
+      "breakpoints": true
     }
   ]
 }

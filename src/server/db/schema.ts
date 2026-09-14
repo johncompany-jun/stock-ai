@@ -83,6 +83,38 @@ export const predictionLog = sqliteTable(
 
 export type PredictionLog = typeof predictionLog.$inferSelect;
 
+export const dailyPicks = sqliteTable(
+  "daily_picks",
+  {
+    code: text("code").notNull(),
+    runDate: integer("run_date").notNull(),
+    modelName: text("model_name").notNull(),
+    horizonDays: integer("horizon_days").notNull(),
+    lastClose: real("last_close").notNull(),
+    predictedClose: real("predicted_close").notNull(),
+    expectedReturnPct: real("expected_return_pct").notNull(),
+    confidence: integer("confidence").notNull(),
+    agreement: integer("agreement").notNull(),
+    agreementTotal: integer("agreement_total").notNull(),
+    returnStdevPct: real("return_stdev_pct").notNull(),
+    confidenceTier: text("confidence_tier"),
+    predsJson: text("preds_json").notNull(),
+    actualClose: real("actual_close"),
+    actualDate: integer("actual_date"),
+    directionHit: integer("direction_hit"),
+    returnPct: real("return_pct"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.code, t.runDate] }),
+    runDateIdx: index("daily_picks_run_date_idx").on(t.runDate),
+    confidenceIdx: index("daily_picks_confidence_idx").on(t.confidence),
+  }),
+);
+
+export type DailyPick = typeof dailyPicks.$inferSelect;
+
 export const fxCandles = sqliteTable(
   "fx_candles",
   {

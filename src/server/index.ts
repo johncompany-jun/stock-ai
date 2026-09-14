@@ -230,7 +230,7 @@ const computeConfidence = (
 app.get("/api/rankings", async (c) => {
   const db = drizzle(c.env.DB);
   const budget = Math.max(1, Number(c.req.query("budget") ?? "100000"));
-  const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
+  const limit = Math.min(Number(c.req.query("limit") ?? "20"), 500);
   const sort = c.req.query("sort") === "return" ? "return" : "profit";
   const model = c.req.query("model") ?? "lstm_v1";
   const minAgreement = Math.min(
