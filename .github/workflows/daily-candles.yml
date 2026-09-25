@@ -55,6 +55,9 @@ jobs:
           --days 365 --chunk 200
           --apply --remote
 
+      - name: Backfill daily_picks actuals from fresh candles
+        run: bun run scripts/backfill-daily-picks.ts --remote --apply
+
       - name: Summary
         if: always()
         run: |
@@ -62,3 +65,5 @@ jobs:
             "SELECT COUNT(DISTINCT code) AS codes, COUNT(*) AS rows, MAX(date) AS latest FROM candles"
           bunx wrangler d1 execute stock-ai --remote --command \
             "SELECT model_name, COUNT(*) AS n, MAX(run_at) AS latest_run FROM predictions GROUP BY model_name"
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT COUNT(*) AS resolved, SUM(direction_hit) AS wins, ROUND(AVG(return_pct),3) AS avg_ret FROM daily_picks WHERE direction_hit IS NOT NULL AND confidence_tier='A'"
