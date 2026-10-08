@@ -172,7 +172,7 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   const [y1, m1, d] = jstDateStrParts(r.date);
   const dow = dowLabel(dowFromJst(y1, m1, d));
   const lines: string[] = [];
-  lines.push(`FX シグナル [${r.pair}]  ${r.date} (${dow})  8:30 JST`);
+  lines.push(`FX シグナル [${r.pair}]  ${r.date} (${dow})  配信8:30 / エントリー9:00 JST`);
   lines.push("");
   if (y) {
     const [yy, ym, yd] = jstDateStrParts(y.date);
@@ -197,8 +197,8 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   lines.push(`エントリー参考価格: ${f.entry_price.toFixed(3)}`);
   lines.push("");
   lines.push("今朝の状況:");
-  lines.push(`  NY 変化 (前日8:30比):     ${sign(f.ny_delta_pips, "p")}`);
-  lines.push(`  朝のトレンド (7:00→8:29): ${sign(f.morning_trend_bps, "bps")}`);
+  lines.push(`  NY 変化 (前日9:00比):     ${sign(f.ny_delta_pips, "p")}`);
+  lines.push(`  朝のトレンド (7:30→8:59): ${sign(f.morning_trend_bps, "bps")}`);
   lines.push(`  ゴトー日:                 ${f.gotoubi_flag ? "はい" : "いいえ"}`);
   lines.push("");
   lines.push(`過去 ${r.historySize} 営業日で今朝と似ていた日 上位 ${K} 件:`);
@@ -217,7 +217,7 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   lines.push(`  SHORT 勝ち ${r.shortWins}/${K} (${((r.shortWins / K) * 100).toFixed(0)}%)  平均 ${sign(r.avgShort, "p")}`);
   lines.push("");
   lines.push("運用メモ:");
-  lines.push("  ・エントリー: 8:30 JST 近辺で成行");
+  lines.push("  ・エントリー: 9:00 JST 近辺で成行");
   lines.push(`  ・利確/損切目安: ±${TP_PIPS} pips`);
   lines.push("  ・タイムカット: 11:00 JST までに手仕舞い");
   lines.push("  ・最終判断は類似日パターンをご確認ください (執行と決済はご自身で)");
@@ -282,7 +282,7 @@ const buildHtml = (r: PredictResult, y: YesterdayReport | null): string => {
   return `<!doctype html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;color:#111827;max-width:640px;margin:0 auto;padding:20px;">
   <h2 style="margin:0 0 4px 0;color:#111827;">FX シグナル ${r.pair}</h2>
-  <p style="margin:0 0 20px 0;color:#6b7280;">${r.date} (${dow}) 8:30 JST</p>
+  <p style="margin:0 0 20px 0;color:#6b7280;">${r.date} (${dow}) 配信8:30 / エントリー9:00 JST</p>
 ${yesterdayBlock}
   <div style="background:${dirColor};color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:20px;">
     <div style="font-size:28px;font-weight:700;">${dirLabel}</div>
@@ -291,8 +291,8 @@ ${yesterdayBlock}
 
   <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">今朝の状況</h3>
   <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:14px;">
-    <tr><td style="padding:6px 0;color:#6b7280;width:200px;">NY 変化 (前日8:30比)</td><td style="font-family:monospace;">${sign(f.ny_delta_pips, "p")}</td></tr>
-    <tr><td style="padding:6px 0;color:#6b7280;">朝のトレンド (7:00→8:29)</td><td style="font-family:monospace;">${sign(f.morning_trend_bps, "bps")}</td></tr>
+    <tr><td style="padding:6px 0;color:#6b7280;width:200px;">NY 変化 (前日9:00比)</td><td style="font-family:monospace;">${sign(f.ny_delta_pips, "p")}</td></tr>
+    <tr><td style="padding:6px 0;color:#6b7280;">朝のトレンド (7:30→8:59)</td><td style="font-family:monospace;">${sign(f.morning_trend_bps, "bps")}</td></tr>
     <tr><td style="padding:6px 0;color:#6b7280;">ゴトー日</td><td>${f.gotoubi_flag ? "はい" : "いいえ"}</td></tr>
   </table>
 
@@ -320,7 +320,7 @@ ${yesterdayBlock}
 
   <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">運用メモ</h3>
   <ul style="margin:0 0 20px 0;padding-left:20px;font-size:13px;color:#374151;line-height:1.7;">
-    <li>エントリー: 8:30 JST 近辺で成行</li>
+    <li>エントリー: 9:00 JST 近辺で成行</li>
     <li>利確/損切目安: <strong>±${TP_PIPS} pips</strong> (モデル学習前提)</li>
     <li>タイムカット: <strong>11:00 JST</strong> までに手仕舞い</li>
     <li>最終判断は上の類似日パターンをご確認ください (執行と決済はご自身で)</li>

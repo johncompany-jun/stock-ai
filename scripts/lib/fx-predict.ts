@@ -179,8 +179,9 @@ export const jstDateStrParts = (s: string): [number, number, number] => {
 };
 
 export const jstDateToEntryUtcSec = (y: number, m1: number, d: number): number => {
+  // Entry: 9:00 JST = 00:00 UTC same day
   const jstMidnightUtc = Date.UTC(y, m1 - 1, d) - 9 * 3600 * 1000;
-  return Math.floor((jstMidnightUtc + 8.5 * 3600 * 1000) / 1000);
+  return Math.floor((jstMidnightUtc + 9.0 * 3600 * 1000) / 1000);
 };
 
 export const dowFromJst = (y: number, m1: number, d: number): number => {
@@ -271,7 +272,7 @@ export const computeOutcome = async (
   const [y, m1, d] = jstDateStrParts(date);
   const entryTs = jstDateToEntryUtcSec(y, m1, d);
   const winStart = entryTs;
-  const winEnd = entryTs + 150 * 60;
+  const winEnd = entryTs + 120 * 60;
 
   const bars = await source.fetchWindow(pair, winStart, winEnd);
   const byTs = new Map<number, Bar>();
@@ -281,14 +282,14 @@ export const computeOutcome = async (
   if (!entryBar) return null;
   const entryPrice = entryBar.o;
 
-  const exitBar = byTs.get(entryTs + 150 * 60);
+  const exitBar = byTs.get(entryTs + 120 * 60);
   const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
 
   const tpPrice = entryPrice + opts.tpPips / 100;
   const slPrice = entryPrice - opts.slPips / 100;
   let tpHitMin: number | null = null;
   let slHitMin: number | null = null;
-  for (let off = 0; off <= 150; off++) {
+  for (let off = 0; off <= 120; off++) {
     const bar = byTs.get(entryTs + off * 60);
     if (!bar) continue;
     if (tpHitMin === null && bar.h >= tpPrice) tpHitMin = off;
@@ -346,7 +347,7 @@ export const predict = async (opts: {
   source: CandleSource;
 }): Promise<PredictResult> => {
   const f = await computeFeatures(opts.source, opts.pair, opts.date);
-  if (!f) throw new Error(`no entry bar for ${opts.pair} @ ${opts.date} 8:30 JST (update fx_candles first)`);
+  if (!f) throw new Error(`no entry bar for ${opts.pair} @ ${opts.date} 9:00 JST (update fx_candles first)`);
 
   const norm = JSON.parse(readFileSync(`${opts.modelDir}/normalization.json`, "utf8")) as {
     mtMean: number;

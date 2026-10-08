@@ -111,7 +111,7 @@ const main = async () => {
   const both = valid.filter((r) => r.tp_hit_min !== null && r.sl_hit_min !== null);
   const bothTpFirst = both.filter((r) => (r.tp_hit_min as number) < (r.sl_hit_min as number)).length;
   const neither = valid.filter((r) => r.tp_hit_min === null && r.sl_hit_min === null).length;
-  console.log(`[TP/SL hit within ${150}min window]`);
+  console.log(`[TP/SL hit within ${120}min window]`);
   console.log(`  TP-only=${tpOnly}  SL-only=${slOnly}  both=${both.length} (TP-first=${bothTpFirst})  neither=${neither}\n`);
 
   // Naive rules

@@ -93,9 +93,9 @@ const jstDateStr = (y: number, m1: number, d: number): string =>
   `${y}-${String(m1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
 const jstDateToEntryUtcSec = (y: number, m1: number, d: number): number => {
-  // Entry: 8:30 JST on (y,m1,d) = 23:30 UTC on (y,m1,d-1)
+  // Entry: 9:00 JST on (y,m1,d) = 00:00 UTC on (y,m1,d)
   const jstMidnightUtc = Date.UTC(y, m1 - 1, d) - 9 * 3600 * 1000; // 00:00 JST on target date, in UTC ms
-  return Math.floor((jstMidnightUtc + 8.5 * 3600 * 1000) / 1000);
+  return Math.floor((jstMidnightUtc + 9.0 * 3600 * 1000) / 1000);
 };
 
 const main = async () => {
@@ -162,14 +162,14 @@ const main = async () => {
     }
     const entryPrice = entryBar.o;
 
-    // Exit at 11:00 JST = 02:00 UTC same UTC day = entryTs + 150 min (23:30 UTC + 150 min = 02:00 UTC)
-    const exitBar = byTs.get(entryTs + 150 * 60);
+    // Exit at 11:00 JST = 02:00 UTC = entryTs + 120 min (00:00 UTC + 120 min = 02:00 UTC)
+    const exitBar = byTs.get(entryTs + 120 * 60);
     const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
 
-    // TP/SL first-hit within window [entryTs .. entryTs + 150*60]
+    // TP/SL first-hit within window [entryTs .. entryTs + 120*60]
     let tpHitMin: number | null = null;
     let slHitMin: number | null = null;
-    for (let off = 0; off <= 150; off++) {
+    for (let off = 0; off <= 120; off++) {
       const bar = byTs.get(entryTs + off * 60);
       if (!bar) continue;
       if (tpHitMin === null && bar.h >= entryPrice + TP) tpHitMin = off;
@@ -177,7 +177,7 @@ const main = async () => {
       if (tpHitMin !== null && slHitMin !== null) break;
     }
 
-    // Morning trend: 22:00 UTC prev day (7:00 JST) -> 23:29 UTC prev day (8:29 JST)
+    // Morning trend: 22:30 UTC prev day (7:30 JST) -> 23:59 UTC prev day (8:59 JST), 90-min window before 9:00 entry
     const morningStart = entryTs - 90 * 60;
     const morningEndBar = byTs.get(entryTs - 60);
     const morningStartBar = byTs.get(morningStart);

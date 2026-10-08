@@ -49,11 +49,11 @@ const main = async () => {
   const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K, source: buildSource() });
   const { features: f, neighbors: scored, direction, confidence, probability: prob } = r;
 
-  console.log(`=== FX シグナル [${PAIR}]  ${date} (${dowLabel(dow)})  8:30 JST ===\n`);
+  console.log(`=== FX シグナル [${PAIR}]  ${date} (${dowLabel(dow)})  配信8:30 / エントリー9:00 JST ===\n`);
   console.log(`エントリー参考価格: ${f.entry_price.toFixed(3)}`);
   console.log(`今朝の状況:`);
-  console.log(`  NY 変化 (前日8:30比):     ${f.ny_delta_pips !== null ? (f.ny_delta_pips >= 0 ? "+" : "") + f.ny_delta_pips.toFixed(1) + "p" : "N/A"}`);
-  console.log(`  朝のトレンド (7:00→8:29): ${f.morning_trend_bps !== null ? (f.morning_trend_bps >= 0 ? "+" : "") + f.morning_trend_bps.toFixed(1) + "bps" : "N/A"}`);
+  console.log(`  NY 変化 (前日9:00比):     ${f.ny_delta_pips !== null ? (f.ny_delta_pips >= 0 ? "+" : "") + f.ny_delta_pips.toFixed(1) + "p" : "N/A"}`);
+  console.log(`  朝のトレンド (7:30→8:59): ${f.morning_trend_bps !== null ? (f.morning_trend_bps >= 0 ? "+" : "") + f.morning_trend_bps.toFixed(1) + "bps" : "N/A"}`);
   console.log(`  ゴトー日:                 ${f.gotoubi_flag ? "はい" : "いいえ"}`);
   console.log("");
   console.log(`[モデル判定 — ${r.seeds}-seed ensemble]`);
