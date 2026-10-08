@@ -38,8 +38,31 @@ jobs:
           --daysBack ${{ inputs.daysBack || '7' }}
           --remote
 
+      - name: Update Nikkei 225 daily closes
+        run: >
+          bun run scripts/fx-update-external.ts
+          --symbol "^N225"
+          --daysBack ${{ inputs.daysBack || '7' }}
+          --remote
+
+      - name: Update DXY (US Dollar Index) daily closes
+        run: >
+          bun run scripts/fx-update-external.ts
+          --symbol "DX-Y.NYB"
+          --daysBack ${{ inputs.daysBack || '7' }}
+          --remote
+
+      - name: Update US 10Y yield daily closes
+        run: >
+          bun run scripts/fx-update-external.ts
+          --symbol "^TNX"
+          --daysBack ${{ inputs.daysBack || '7' }}
+          --remote
+
       - name: Summary
         if: always()
         run: |
           bunx wrangler d1 execute stock-ai --remote --command \
             "SELECT pair, COUNT(*) AS n, datetime(MIN(timestamp_utc), 'unixepoch') AS min_utc, datetime(MAX(timestamp_utc), 'unixepoch') AS max_utc FROM fx_candles GROUP BY pair"
+          bunx wrangler d1 execute stock-ai --remote --command \
+            "SELECT symbol, COUNT(*) AS n, MIN(date) AS min_date, MAX(date) AS max_date FROM external_daily GROUP BY symbol"

@@ -100,7 +100,7 @@ const main = async () => {
   const pos = labels.filter((v) => v > 0).length;
   const neg = labels.filter((v) => v < 0).length;
   const q = (p: number) => labels[Math.floor(labels.length * p)].toFixed(2);
-  console.log("[9:55 close p&l distribution (pips)]");
+  console.log("[11:00 close p&l distribution (pips)]");
   console.log(`  mean=${mean.toFixed(2)}  stdev=${stdev.toFixed(2)}  min=${labels[0].toFixed(2)}  max=${labels.at(-1)?.toFixed(2)}`);
   console.log(`  q25=${q(0.25)}  median=${q(0.5)}  q75=${q(0.75)}`);
   console.log(`  positive=${pos}/${labels.length} (${((pos / labels.length) * 100).toFixed(1)}%)  negative=${neg} (${((neg / labels.length) * 100).toFixed(1)}%)\n`);
@@ -111,7 +111,7 @@ const main = async () => {
   const both = valid.filter((r) => r.tp_hit_min !== null && r.sl_hit_min !== null);
   const bothTpFirst = both.filter((r) => (r.tp_hit_min as number) < (r.sl_hit_min as number)).length;
   const neither = valid.filter((r) => r.tp_hit_min === null && r.sl_hit_min === null).length;
-  console.log(`[TP/SL hit within ${85}min window]`);
+  console.log(`[TP/SL hit within ${150}min window]`);
   console.log(`  TP-only=${tpOnly}  SL-only=${slOnly}  both=${both.length} (TP-first=${bothTpFirst})  neither=${neither}\n`);
 
   // Naive rules

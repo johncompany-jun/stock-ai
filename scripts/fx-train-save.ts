@@ -34,6 +34,9 @@ type Row = {
   label_995_pips: number | null;
   tp_hit_min: number | null;
   sl_hit_min: number | null;
+  nikkei_prev_return_bps: number | null;
+  dxy_prev_return_bps: number | null;
+  tnx_prev_return_bps: number | null;
 };
 
 const D1_ROOT = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
@@ -62,24 +65,35 @@ const pnlShort = (r: Row): number => {
 };
 
 const featurize = (
-  morning_trend_bps: number | null,
-  ny_delta_pips: number | null,
-  gotoubi_flag: number,
-  dow: number,
-  mean: [number, number],
-  std: [number, number],
+  r: {
+    morning_trend_bps: number | null;
+    ny_delta_pips: number | null;
+    gotoubi_flag: number;
+    dow: number;
+    nikkei_prev_return_bps: number | null;
+    dxy_prev_return_bps: number | null;
+    tnx_prev_return_bps: number | null;
+  },
+  mean: number[],
+  std: number[],
 ): number[] => {
-  const mt = ((morning_trend_bps ?? 0) - mean[0]) / std[0];
-  const nd = ((ny_delta_pips ?? 0) - mean[1]) / std[1];
+  const mt = ((r.morning_trend_bps ?? 0) - mean[0]) / std[0];
+  const nd = ((r.ny_delta_pips ?? 0) - mean[1]) / std[1];
+  const nk = ((r.nikkei_prev_return_bps ?? 0) - mean[2]) / std[2];
+  const dx = ((r.dxy_prev_return_bps ?? 0) - mean[3]) / std[3];
+  const tn = ((r.tnx_prev_return_bps ?? 0) - mean[4]) / std[4];
   return [
     mt,
     nd,
-    gotoubi_flag,
-    dow === 1 ? 1 : 0,
-    dow === 2 ? 1 : 0,
-    dow === 3 ? 1 : 0,
-    dow === 4 ? 1 : 0,
-    dow === 5 ? 1 : 0,
+    nk,
+    dx,
+    tn,
+    r.gotoubi_flag,
+    r.dow === 1 ? 1 : 0,
+    r.dow === 2 ? 1 : 0,
+    r.dow === 3 ? 1 : 0,
+    r.dow === 4 ? 1 : 0,
+    r.dow === 5 ? 1 : 0,
   ];
 };
 
@@ -121,7 +135,7 @@ const main = async () => {
   const db = new Database(findLocalDb(), { readonly: true });
   const raw = db
     .query<Row, [string]>(
-      "SELECT date, entry_price, ny_delta_pips, morning_trend_bps, gotoubi_flag, dow, label_995_pips, tp_hit_min, sl_hit_min FROM fx_features WHERE pair = ? ORDER BY date",
+      "SELECT date, entry_price, ny_delta_pips, morning_trend_bps, gotoubi_flag, dow, label_995_pips, tp_hit_min, sl_hit_min, nikkei_prev_return_bps, dxy_prev_return_bps, tnx_prev_return_bps FROM fx_features WHERE pair = ? ORDER BY date",
     )
     .all(PAIR);
   db.close();
@@ -130,24 +144,30 @@ const main = async () => {
   const train = rows.filter((r) => r.date <= TRAIN_END);
   console.log(`pair=${PAIR}  total=${rows.length}  train=${train.length} (through ${TRAIN_END})  seeds=${SEEDS}  epochs=${EPOCHS}`);
 
-  const mts = train.map((r) => r.morning_trend_bps ?? 0);
-  const nds = train.map((r) => r.ny_delta_pips ?? 0);
   const meanArr = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
   const stdArr = (a: number[], m: number) => Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) || 1;
-  const mtMean = meanArr(mts);
-  const mtStd = stdArr(mts, mtMean);
-  const ndMean = meanArr(nds);
-  const ndStd = stdArr(nds, ndMean);
-  const mean: [number, number] = [mtMean, ndMean];
-  const std: [number, number] = [mtStd, ndStd];
+  const colStats = (sel: (r: Row) => number): [number, number] => {
+    const arr = train.map(sel);
+    const m = meanArr(arr);
+    return [m, stdArr(arr, m)];
+  };
+  const [mtMean, mtStd] = colStats((r) => r.morning_trend_bps ?? 0);
+  const [ndMean, ndStd] = colStats((r) => r.ny_delta_pips ?? 0);
+  const [nkMean, nkStd] = colStats((r) => r.nikkei_prev_return_bps ?? 0);
+  const [dxMean, dxStd] = colStats((r) => r.dxy_prev_return_bps ?? 0);
+  const [tnMean, tnStd] = colStats((r) => r.tnx_prev_return_bps ?? 0);
+  const mean = [mtMean, ndMean, nkMean, dxMean, tnMean];
+  const std = [mtStd, ndStd, nkStd, dxStd, tnStd];
 
   writeFileSync(
     `${OUT_DIR}/normalization.json`,
-    JSON.stringify({ mtMean, mtStd, ndMean, ndStd }, null, 2),
+    JSON.stringify({ mtMean, mtStd, ndMean, ndStd, nkMean, nkStd, dxMean, dxStd, tnMean, tnStd }, null, 2),
   );
-  console.log(`saved normalization.json  (mt μ=${mtMean.toFixed(2)} σ=${mtStd.toFixed(2)}  nd μ=${ndMean.toFixed(2)} σ=${ndStd.toFixed(2)})`);
+  console.log(
+    `saved normalization.json  (mt μ=${mtMean.toFixed(2)} σ=${mtStd.toFixed(2)}  nd μ=${ndMean.toFixed(2)} σ=${ndStd.toFixed(2)}  nk μ=${nkMean.toFixed(2)} σ=${nkStd.toFixed(2)}  dx μ=${dxMean.toFixed(2)} σ=${dxStd.toFixed(2)}  tn μ=${tnMean.toFixed(2)} σ=${tnStd.toFixed(2)})`,
+  );
 
-  const trainX = train.map((r) => featurize(r.morning_trend_bps, r.ny_delta_pips, r.gotoubi_flag, r.dow, mean, std));
+  const trainX = train.map((r) => featurize(r, mean, std));
   const trainY = train.map((r) => (pnlLong(r) > 0 ? 1 : 0));
   const inputDim = trainX[0].length;
   const trainPos = trainY.reduce((a, b) => a + b, 0);
@@ -175,7 +195,10 @@ const main = async () => {
     ny_delta_pips: r.ny_delta_pips,
     gotoubi_flag: r.gotoubi_flag,
     dow: r.dow,
-    features: featurize(r.morning_trend_bps, r.ny_delta_pips, r.gotoubi_flag, r.dow, mean, std),
+    nikkei_prev_return_bps: r.nikkei_prev_return_bps,
+    dxy_prev_return_bps: r.dxy_prev_return_bps,
+    tnx_prev_return_bps: r.tnx_prev_return_bps,
+    features: featurize(r, mean, std),
     pnl_long: pnlLong(r),
     pnl_short: pnlShort(r),
   }));

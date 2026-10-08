@@ -10,6 +10,9 @@ export type Features = {
   ny_delta_pips: number | null;
   gotoubi_flag: number;
   dow: number;
+  nikkei_prev_return_bps: number | null;
+  dxy_prev_return_bps: number | null;
+  tnx_prev_return_bps: number | null;
 };
 
 export type KnnRow = {
@@ -19,6 +22,9 @@ export type KnnRow = {
   ny_delta_pips: number | null;
   gotoubi_flag: number;
   dow: number;
+  nikkei_prev_return_bps: number | null;
+  dxy_prev_return_bps: number | null;
+  tnx_prev_return_bps: number | null;
   features: number[];
   pnl_long: number;
   pnl_short: number;
@@ -44,9 +50,12 @@ export type PredictResult = {
 
 type Bar = { ts: number; o: number; h: number; l: number; c: number };
 
+export type ExternalClose = { date: string; close: number };
+
 export type CandleSource = {
   fetchWindow: (pair: string, from: number, to: number) => Promise<Bar[]>;
   fetchBar: (pair: string, ts: number) => Promise<Bar | null>;
+  fetchExternalPrevCloses: (symbol: string, beforeDate: string, limit: number) => Promise<ExternalClose[]>;
 };
 
 const D1_ROOT = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
@@ -81,6 +90,18 @@ export const localCandleSource = (dbPath?: string): CandleSource => {
             )
             .get(pair, ts) ?? null
         );
+      } finally {
+        db.close();
+      }
+    },
+    fetchExternalPrevCloses: async (symbol, beforeDate, limit) => {
+      const db = new Database(path, { readonly: true });
+      try {
+        return db
+          .query<ExternalClose, [string, string, number]>(
+            "SELECT date, close FROM external_daily WHERE symbol = ? AND date < ? ORDER BY date DESC LIMIT ?",
+          )
+          .all(symbol, beforeDate, limit);
       } finally {
         db.close();
       }
@@ -136,6 +157,13 @@ export const remoteCandleSource = (config: {
         [pair, ts],
       );
       return rows[0] ? toBar(rows[0]) : null;
+    },
+    fetchExternalPrevCloses: async (symbol, beforeDate, limit) => {
+      const rows = await query(
+        "SELECT date, close FROM external_daily WHERE symbol = ? AND date < ? ORDER BY date DESC LIMIT ?",
+        [symbol, beforeDate, limit],
+      );
+      return rows.map((r) => ({ date: String(r.date), close: Number(r.close) }));
     },
   };
 };
@@ -208,6 +236,12 @@ export const computeFeatures = async (
     }
   }
 
+  const prevReturnBps = async (symbol: string): Promise<number | null> => {
+    const closes = await source.fetchExternalPrevCloses(symbol, date, 2);
+    if (closes.length < 2 || closes[1].close <= 0) return null;
+    return ((closes[0].close - closes[1].close) / closes[1].close) * 10000;
+  };
+
   return {
     date,
     entry_price: entryPrice,
@@ -215,6 +249,9 @@ export const computeFeatures = async (
     ny_delta_pips: prev !== null ? (entryPrice - prev) * 100 : null,
     gotoubi_flag: isGotoubi(y, m1, d) ? 1 : 0,
     dow: dowFromJst(y, m1, d),
+    nikkei_prev_return_bps: await prevReturnBps("^N225"),
+    dxy_prev_return_bps: await prevReturnBps("DX-Y.NYB"),
+    tnx_prev_return_bps: await prevReturnBps("^TNX"),
   };
 };
 
@@ -234,7 +271,7 @@ export const computeOutcome = async (
   const [y, m1, d] = jstDateStrParts(date);
   const entryTs = jstDateToEntryUtcSec(y, m1, d);
   const winStart = entryTs;
-  const winEnd = entryTs + 85 * 60;
+  const winEnd = entryTs + 150 * 60;
 
   const bars = await source.fetchWindow(pair, winStart, winEnd);
   const byTs = new Map<number, Bar>();
@@ -244,14 +281,14 @@ export const computeOutcome = async (
   if (!entryBar) return null;
   const entryPrice = entryBar.o;
 
-  const exitBar = byTs.get(entryTs + 85 * 60);
+  const exitBar = byTs.get(entryTs + 150 * 60);
   const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
 
   const tpPrice = entryPrice + opts.tpPips / 100;
   const slPrice = entryPrice - opts.slPips / 100;
   let tpHitMin: number | null = null;
   let slHitMin: number | null = null;
-  for (let off = 0; off <= 85; off++) {
+  for (let off = 0; off <= 150; off++) {
     const bar = byTs.get(entryTs + off * 60);
     if (!bar) continue;
     if (tpHitMin === null && bar.h >= tpPrice) tpHitMin = off;
@@ -263,21 +300,29 @@ export const computeOutcome = async (
 };
 
 export const featurize = (
-  mt: number | null,
-  nd: number | null,
-  gotoubi: number,
-  dow: number,
-  mean: [number, number],
-  std: [number, number],
+  f: {
+    morning_trend_bps: number | null;
+    ny_delta_pips: number | null;
+    gotoubi_flag: number;
+    dow: number;
+    nikkei_prev_return_bps: number | null;
+    dxy_prev_return_bps: number | null;
+    tnx_prev_return_bps: number | null;
+  },
+  mean: number[],
+  std: number[],
 ): number[] => [
-  ((mt ?? 0) - mean[0]) / std[0],
-  ((nd ?? 0) - mean[1]) / std[1],
-  gotoubi,
-  dow === 1 ? 1 : 0,
-  dow === 2 ? 1 : 0,
-  dow === 3 ? 1 : 0,
-  dow === 4 ? 1 : 0,
-  dow === 5 ? 1 : 0,
+  ((f.morning_trend_bps ?? 0) - mean[0]) / std[0],
+  ((f.ny_delta_pips ?? 0) - mean[1]) / std[1],
+  ((f.nikkei_prev_return_bps ?? 0) - mean[2]) / std[2],
+  ((f.dxy_prev_return_bps ?? 0) - mean[3]) / std[3],
+  ((f.tnx_prev_return_bps ?? 0) - mean[4]) / std[4],
+  f.gotoubi_flag,
+  f.dow === 1 ? 1 : 0,
+  f.dow === 2 ? 1 : 0,
+  f.dow === 3 ? 1 : 0,
+  f.dow === 4 ? 1 : 0,
+  f.dow === 5 ? 1 : 0,
 ];
 
 const loadSeedModel = async (modelDir: string, seedIdx: number): Promise<tf.LayersModel> => {
@@ -308,10 +353,16 @@ export const predict = async (opts: {
     mtStd: number;
     ndMean: number;
     ndStd: number;
+    nkMean: number;
+    nkStd: number;
+    dxMean: number;
+    dxStd: number;
+    tnMean: number;
+    tnStd: number;
   };
-  const mean: [number, number] = [norm.mtMean, norm.ndMean];
-  const std: [number, number] = [norm.mtStd, norm.ndStd];
-  const inputVec = featurize(f.morning_trend_bps, f.ny_delta_pips, f.gotoubi_flag, f.dow, mean, std);
+  const mean = [norm.mtMean, norm.ndMean, norm.nkMean, norm.dxMean, norm.tnMean];
+  const std = [norm.mtStd, norm.ndStd, norm.nkStd, norm.dxStd, norm.tnStd];
+  const inputVec = featurize(f, mean, std);
 
   const meta = JSON.parse(readFileSync(`${opts.modelDir}/meta.json`, "utf8")) as { seeds: number };
   let probSum = 0;

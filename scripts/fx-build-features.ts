@@ -53,6 +53,29 @@ type Feature = {
   label995Pips: number | null;
   tpHitMin: number | null;
   slHitMin: number | null;
+  nikkeiPrevReturnBps: number | null;
+  dxyPrevReturnBps: number | null;
+  tnxPrevReturnBps: number | null;
+};
+
+type ExternalSeries = {
+  closes: Map<string, number>;
+  sortedDates: string[];
+};
+
+const externalPrevReturn = (series: ExternalSeries, entryDate: string): number | null => {
+  let prevIdx = -1;
+  for (let i = series.sortedDates.length - 1; i >= 0; i--) {
+    if (series.sortedDates[i] < entryDate) {
+      prevIdx = i;
+      break;
+    }
+  }
+  if (prevIdx < 1) return null;
+  const prevClose = series.closes.get(series.sortedDates[prevIdx]);
+  const prevPrevClose = series.closes.get(series.sortedDates[prevIdx - 1]);
+  if (prevClose == null || prevPrevClose == null || prevPrevClose === 0) return null;
+  return ((prevClose - prevPrevClose) / prevPrevClose) * 10000;
 };
 
 const isLastDayOfMonth = (d: Date): boolean => {
@@ -93,8 +116,23 @@ const main = async () => {
       "SELECT timestamp_utc AS ts, open AS o, high AS h, low AS l, close AS c FROM fx_candles WHERE pair = ? AND timestamp_utc BETWEEN ? AND ? ORDER BY timestamp_utc",
     )
     .all(PAIR, fromUtcSec, toUtcSec);
+  const loadExternal = (symbol: string): ExternalSeries => {
+    const ex = db
+      .query<{ date: string; close: number }, [string]>(
+        "SELECT date, close FROM external_daily WHERE symbol = ? ORDER BY date",
+      )
+      .all(symbol);
+    const closes = new Map<string, number>();
+    for (const r of ex) closes.set(r.date, r.close);
+    return { closes, sortedDates: ex.map((r) => r.date) };
+  };
+  const nikkei = loadExternal("^N225");
+  const dxy = loadExternal("DX-Y.NYB");
+  const tnx = loadExternal("^TNX");
   db.close();
-  console.log(`loaded ${rows.length} candles from local D1`);
+  console.log(
+    `loaded ${rows.length} candles  N225=${nikkei.sortedDates.length}  DXY=${dxy.sortedDates.length}  TNX=${tnx.sortedDates.length}`,
+  );
 
   const byTs = new Map<number, Bar>();
   for (const r of rows) byTs.set(r.ts, { o: r.o, h: r.h, l: r.l, c: r.c });
@@ -124,14 +162,14 @@ const main = async () => {
     }
     const entryPrice = entryBar.o;
 
-    // Exit at 9:55 JST = 00:55 UTC same UTC day = entryTs + 85 min (23:30 UTC + 85 min = 00:55 UTC)
-    const exitBar = byTs.get(entryTs + 85 * 60);
+    // Exit at 11:00 JST = 02:00 UTC same UTC day = entryTs + 150 min (23:30 UTC + 150 min = 02:00 UTC)
+    const exitBar = byTs.get(entryTs + 150 * 60);
     const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
 
-    // TP/SL first-hit within window [entryTs .. entryTs + 85*60]
+    // TP/SL first-hit within window [entryTs .. entryTs + 150*60]
     let tpHitMin: number | null = null;
     let slHitMin: number | null = null;
-    for (let off = 0; off <= 85; off++) {
+    for (let off = 0; off <= 150; off++) {
       const bar = byTs.get(entryTs + off * 60);
       if (!bar) continue;
       if (tpHitMin === null && bar.h >= entryPrice + TP) tpHitMin = off;
@@ -152,8 +190,9 @@ const main = async () => {
     const nyDeltaPips =
       prevTradingEntryPrice !== null ? (entryPrice - prevTradingEntryPrice) * 100 : null;
 
+    const dateStr = jstDateStr(y, m1, d);
     features.push({
-      date: jstDateStr(y, m1, d),
+      date: dateStr,
       entryTsUtc: entryTs,
       entryPrice,
       nyDeltaPips,
@@ -163,6 +202,9 @@ const main = async () => {
       label995Pips,
       tpHitMin,
       slHitMin,
+      nikkeiPrevReturnBps: externalPrevReturn(nikkei, dateStr),
+      dxyPrevReturnBps: externalPrevReturn(dxy, dateStr),
+      tnxPrevReturnBps: externalPrevReturn(tnx, dateStr),
     });
 
     prevTradingEntryPrice = entryPrice;
@@ -179,11 +221,11 @@ const main = async () => {
     const vals = slice
       .map((f) => {
         const cell = (v: number | null): string => (v === null ? "NULL" : String(v));
-        return `('${PAIR}','${f.date}',${f.entryTsUtc},${f.entryPrice},${cell(f.nyDeltaPips)},${cell(f.morningTrendBps)},${f.gotoubiFlag},${f.dow},${cell(f.label995Pips)},${cell(f.tpHitMin)},${cell(f.slHitMin)})`;
+        return `('${PAIR}','${f.date}',${f.entryTsUtc},${f.entryPrice},${cell(f.nyDeltaPips)},${cell(f.morningTrendBps)},${f.gotoubiFlag},${f.dow},${cell(f.label995Pips)},${cell(f.tpHitMin)},${cell(f.slHitMin)},${cell(f.nikkeiPrevReturnBps)},${cell(f.dxyPrevReturnBps)},${cell(f.tnxPrevReturnBps)})`;
       })
       .join(",\n");
     chunks.push(
-      `INSERT OR REPLACE INTO fx_features (pair,date,entry_ts_utc,entry_price,ny_delta_pips,morning_trend_bps,gotoubi_flag,dow,label_995_pips,tp_hit_min,sl_hit_min) VALUES\n${vals};`,
+      `INSERT OR REPLACE INTO fx_features (pair,date,entry_ts_utc,entry_price,ny_delta_pips,morning_trend_bps,gotoubi_flag,dow,label_995_pips,tp_hit_min,sl_hit_min,nikkei_prev_return_bps,dxy_prev_return_bps,tnx_prev_return_bps) VALUES\n${vals};`,
     );
   }
   writeFileSync(filePath, chunks.join("\n\n") + "\n", "utf8");

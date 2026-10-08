@@ -37,6 +37,9 @@ type Row = {
   label_995_pips: number | null;
   tp_hit_min: number | null;
   sl_hit_min: number | null;
+  nikkei_prev_return_bps: number | null;
+  dxy_prev_return_bps: number | null;
+  tnx_prev_return_bps: number | null;
 };
 
 const D1_ROOT = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
@@ -67,19 +70,22 @@ const pnlShort = (r: Row): number => {
 const featurize = (r: Row, mean: number[], std: number[]): number[] => {
   const mt = ((r.morning_trend_bps ?? 0) - mean[0]) / std[0];
   const nd = ((r.ny_delta_pips ?? 0) - mean[1]) / std[1];
+  const nk = ((r.nikkei_prev_return_bps ?? 0) - mean[2]) / std[2];
+  const dx = ((r.dxy_prev_return_bps ?? 0) - mean[3]) / std[3];
+  const tn = ((r.tnx_prev_return_bps ?? 0) - mean[4]) / std[4];
   const dow1 = r.dow === 1 ? 1 : 0;
   const dow2 = r.dow === 2 ? 1 : 0;
   const dow3 = r.dow === 3 ? 1 : 0;
   const dow4 = r.dow === 4 ? 1 : 0;
   const dow5 = r.dow === 5 ? 1 : 0;
-  return [mt, nd, r.gotoubi_flag, dow1, dow2, dow3, dow4, dow5];
+  return [mt, nd, nk, dx, tn, r.gotoubi_flag, dow1, dow2, dow3, dow4, dow5];
 };
 
 const main = async () => {
   const db = new Database(findLocalDb(), { readonly: true });
   const raw = db
     .query<Row, [string]>(
-      "SELECT date, ny_delta_pips, morning_trend_bps, gotoubi_flag, dow, label_995_pips, tp_hit_min, sl_hit_min FROM fx_features WHERE pair = ? ORDER BY date",
+      "SELECT date, ny_delta_pips, morning_trend_bps, gotoubi_flag, dow, label_995_pips, tp_hit_min, sl_hit_min, nikkei_prev_return_bps, dxy_prev_return_bps, tnx_prev_return_bps FROM fx_features WHERE pair = ? ORDER BY date",
     )
     .all(PAIR);
   db.close();
@@ -91,16 +97,20 @@ const main = async () => {
   console.log(`splits: train=${train.length}  val=${val.length}  test=${test.length}  threshold=${THRESHOLD}  seeds=${SEEDS}\n`);
 
   // Normalization stats from train only
-  const mts = train.map((r) => r.morning_trend_bps ?? 0);
-  const nds = train.map((r) => r.ny_delta_pips ?? 0);
   const meanArr = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
   const stdArr = (a: number[], m: number) => Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) || 1;
-  const mtMean = meanArr(mts);
-  const mtStd = stdArr(mts, mtMean);
-  const ndMean = meanArr(nds);
-  const ndStd = stdArr(nds, ndMean);
-  const mean = [mtMean, ndMean];
-  const std = [mtStd, ndStd];
+  const colStats = (sel: (r: Row) => number): [number, number] => {
+    const arr = train.map(sel);
+    const m = meanArr(arr);
+    return [m, stdArr(arr, m)];
+  };
+  const [mtMean, mtStd] = colStats((r) => r.morning_trend_bps ?? 0);
+  const [ndMean, ndStd] = colStats((r) => r.ny_delta_pips ?? 0);
+  const [nkMean, nkStd] = colStats((r) => r.nikkei_prev_return_bps ?? 0);
+  const [dxMean, dxStd] = colStats((r) => r.dxy_prev_return_bps ?? 0);
+  const [tnMean, tnStd] = colStats((r) => r.tnx_prev_return_bps ?? 0);
+  const mean = [mtMean, ndMean, nkMean, dxMean, tnMean];
+  const std = [mtStd, ndStd, nkStd, dxStd, tnStd];
 
   const X = (rs: Row[]) => rs.map((r) => featurize(r, mean, std));
   const Y = (rs: Row[]) => rs.map((r) => (pnlLong(r) > 0 ? 1 : 0));

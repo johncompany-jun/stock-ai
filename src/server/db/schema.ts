@@ -148,6 +148,9 @@ export const fxFeatures = sqliteTable(
     label995Pips: real("label_995_pips"),
     tpHitMin: integer("tp_hit_min"),
     slHitMin: integer("sl_hit_min"),
+    nikkeiPrevReturnBps: real("nikkei_prev_return_bps"),
+    dxyPrevReturnBps: real("dxy_prev_return_bps"),
+    tnxPrevReturnBps: real("tnx_prev_return_bps"),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.pair, t.date] }),
@@ -156,6 +159,22 @@ export const fxFeatures = sqliteTable(
 );
 
 export type FxFeature = typeof fxFeatures.$inferSelect;
+
+export const externalDaily = sqliteTable(
+  "external_daily",
+  {
+    symbol: text("symbol").notNull(),
+    date: text("date").notNull(),
+    close: real("close").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.symbol, t.date] }),
+    symbolIdx: index("external_daily_symbol_idx").on(t.symbol),
+  }),
+);
+
+export type ExternalDaily = typeof externalDaily.$inferSelect;
 
 export const fxPredictions = sqliteTable(
   "fx_predictions",

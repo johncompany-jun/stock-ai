@@ -219,7 +219,7 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   lines.push("運用メモ:");
   lines.push("  ・エントリー: 8:30 JST 近辺で成行");
   lines.push(`  ・利確/損切目安: ±${TP_PIPS} pips`);
-  lines.push("  ・タイムカット: 9:55 JST までに手仕舞い");
+  lines.push("  ・タイムカット: 11:00 JST までに手仕舞い");
   lines.push("  ・最終判断は類似日パターンをご確認ください (執行と決済はご自身で)");
   return lines.join("\n");
 };
@@ -322,7 +322,7 @@ ${yesterdayBlock}
   <ul style="margin:0 0 20px 0;padding-left:20px;font-size:13px;color:#374151;line-height:1.7;">
     <li>エントリー: 8:30 JST 近辺で成行</li>
     <li>利確/損切目安: <strong>±${TP_PIPS} pips</strong> (モデル学習前提)</li>
-    <li>タイムカット: <strong>9:55 JST</strong> までに手仕舞い</li>
+    <li>タイムカット: <strong>11:00 JST</strong> までに手仕舞い</li>
     <li>最終判断は上の類似日パターンをご確認ください (執行と決済はご自身で)</li>
   </ul>
 
