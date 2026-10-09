@@ -3,9 +3,10 @@ name: Daily FX signal email
 on:
   # NOTE: GitHub cron scheduler has ~30min delay; triggering moved to
   # Cloudflare Worker Cron (src/server/index.ts scheduled handler) which calls
-  # workflow_dispatch precisely at 23:32 UTC (08:32 JST).
+  # workflow_dispatch precisely at 00:05 UTC (09:05 JST), right after the
+  # 9:00 JST entry bar closes.
   # schedule:
-  #   - cron: "32 23 * * 0-4"
+  #   - cron: "5 0 * * 1-5"
   workflow_dispatch:
     inputs:
       date:
