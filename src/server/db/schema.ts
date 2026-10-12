@@ -120,6 +120,25 @@ export const virtualPortfolioTrades = sqliteTable(
 
 export type VirtualPortfolioTrade = typeof virtualPortfolioTrades.$inferSelect;
 
+export const watchlist = sqliteTable(
+  "watchlist",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    code: text("code").notNull(),
+    signalDate: integer("signal_date").notNull(),
+    entryPrice: real("entry_price").notNull(),
+    addedAt: integer("added_at").notNull(),
+    removedAt: integer("removed_at"),
+    note: text("note"),
+  },
+  (t) => ({
+    codeIdx: index("watchlist_code_idx").on(t.code),
+    addedAtIdx: index("watchlist_added_at_idx").on(t.addedAt),
+  }),
+);
+
+export type Watchlist = typeof watchlist.$inferSelect;
+
 export const fxCandles = sqliteTable(
   "fx_candles",
   {

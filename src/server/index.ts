@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades } from "./db/schema";
+import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, watchlist } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
@@ -587,6 +587,153 @@ app.post("/api/portfolio/buy", async (c) => {
     updatedAt: now,
   });
 
+  return c.json({ success: true });
+});
+
+app.get("/api/watchlist", async (c) => {
+  const db = drizzle(c.env.DB);
+  const rows = (await db
+    .select({
+      id: watchlist.id,
+      code: watchlist.code,
+      signalDate: watchlist.signalDate,
+      entryPrice: watchlist.entryPrice,
+      addedAt: watchlist.addedAt,
+      note: watchlist.note,
+      name: stocks.name,
+    })
+    .from(watchlist)
+    .leftJoin(stocks, eq(stocks.code, watchlist.code))
+    .where(isNull(watchlist.removedAt))
+    .orderBy(desc(watchlist.addedAt))) as Array<{
+    id: number;
+    code: string;
+    signalDate: number;
+    entryPrice: number;
+    addedAt: number;
+    note: string | null;
+    name: string | null;
+  }>;
+
+  const latestPickDateRow = await db
+    .select({ d: sql<number>`MAX(${patternPicks.runDate})` })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, "range_oscillator_buy"));
+  const latestPickDate = latestPickDateRow[0]?.d ?? null;
+
+  const todayPickCodes = new Set<string>();
+  if (latestPickDate) {
+    const todayPicks = (await db
+      .select({ code: patternPicks.code })
+      .from(patternPicks)
+      .where(
+        and(
+          eq(patternPicks.patterns, "range_oscillator_buy"),
+          eq(patternPicks.runDate, latestPickDate),
+        ),
+      )) as Array<{ code: string }>;
+    for (const p of todayPicks) todayPickCodes.add(p.code);
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const items: Array<Record<string, unknown>> = [];
+  for (const r of rows) {
+    const latest = await getLatestClose(db, r.code);
+    const currentPrice = latest?.close ?? r.entryPrice;
+    const changePct = ((currentPrice - r.entryPrice) / r.entryPrice) * 100;
+    const daysWatching = Math.floor((nowSec - r.addedAt) / 86400);
+    const inTodaysSignal = todayPickCodes.has(r.code);
+
+    const lastSignalRow = (await db
+      .select({ d: sql<number>`MAX(${patternPicks.runDate})` })
+      .from(patternPicks)
+      .where(
+        and(
+          eq(patternPicks.code, r.code),
+          eq(patternPicks.patterns, "range_oscillator_buy"),
+        ),
+      )) as Array<{ d: number | null }>;
+    const lastSignalDate = lastSignalRow[0]?.d ?? null;
+    let daysSinceLastSignal: number | null = null;
+    if (lastSignalDate && latestPickDate) {
+      const toDate = (ymd: number) => {
+        const y = Math.floor(ymd / 10000);
+        const m = Math.floor((ymd % 10000) / 100) - 1;
+        const d = ymd % 100;
+        return new Date(Date.UTC(y, m, d));
+      };
+      const diffMs = toDate(latestPickDate).getTime() - toDate(lastSignalDate).getTime();
+      daysSinceLastSignal = Math.max(0, Math.floor(diffMs / 86400000));
+    }
+
+    const dropped = !inTodaysSignal && (daysSinceLastSignal === null || daysSinceLastSignal >= 7);
+    const priceRanAway = changePct >= 8;
+
+    items.push({
+      ...r,
+      currentPrice,
+      currentDate: latest?.date ?? null,
+      changePct: Number(changePct.toFixed(2)),
+      daysWatching,
+      inTodaysSignal,
+      lastSignalDate,
+      daysSinceLastSignal,
+      dropped,
+      priceRanAway,
+    });
+  }
+
+  return c.json({ items, latestPickDate });
+});
+
+app.post("/api/watchlist", async (c) => {
+  const db = drizzle(c.env.DB);
+  const body = (await c.req.json()) as {
+    items?: Array<{ code: string; signalDate: number; entryPrice: number }>;
+    code?: string;
+    signalDate?: number;
+    entryPrice?: number;
+    note?: string;
+  };
+  const toInsert = body.items
+    ? body.items
+    : body.code && body.signalDate && body.entryPrice
+      ? [{ code: body.code, signalDate: body.signalDate, entryPrice: body.entryPrice }]
+      : [];
+  if (!toInsert.length) return c.json({ error: "code/signalDate/entryPrice または items が必要" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const existing = (await db
+    .select({ code: watchlist.code })
+    .from(watchlist)
+    .where(isNull(watchlist.removedAt))) as Array<{ code: string }>;
+  const existingSet = new Set(existing.map((e) => e.code));
+  const filtered = toInsert.filter((it) => !existingSet.has(it.code));
+
+  if (!filtered.length) return c.json({ success: true, added: 0, message: "全て既にウォッチ中" });
+
+  for (const it of filtered) {
+    await db.insert(watchlist).values({
+      code: it.code,
+      signalDate: it.signalDate,
+      entryPrice: it.entryPrice,
+      addedAt: now,
+      removedAt: null,
+      note: body.note ?? null,
+    });
+  }
+  return c.json({ success: true, added: filtered.length });
+});
+
+app.delete("/api/watchlist/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "id は必須" }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .update(watchlist)
+    .set({ removedAt: now })
+    .where(eq(watchlist.id, id));
   return c.json({ success: true });
 });
 

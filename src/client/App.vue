@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
-type View = "home" | "portfolio" | "fx";
+type View = "home" | "watchlist" | "portfolio" | "fx";
 const currentView = ref<View>("home");
 
 const apiStatus = ref("checking...");
@@ -99,15 +99,41 @@ const currentMonthVerdict = computed(() => {
 const recommendedWindow = computed(() => {
   const now = new Date();
   const y = now.getFullYear();
-  const m = now.getMonth();
-  const buyStart = new Date(y, m, now.getDate());
-  while (buyStart.getDay() === 0 || buyStart.getDay() === 6) {
-    buyStart.setDate(buyStart.getDate() + 1);
+  const currentMonth = now.getMonth() + 1;
+
+  const candidates: Array<{ month: number; stat: MonthlyStat; yearOffset: number }> = [];
+  for (let i = 0; i < 3; i++) {
+    const absMonth = currentMonth + i;
+    const month = ((absMonth - 1) % 12) + 1;
+    const yearOffset = Math.floor((absMonth - 1) / 12);
+    const stat = patternMonthly.value.find((r) => r.buy_month === month);
+    if (stat) candidates.push({ month, stat, yearOffset });
   }
-  const buyEnd = new Date(y, m + 1, 0);
+  if (candidates.length === 0) return null;
+
+  const maxAvg = Math.max(...candidates.map((c) => c.stat.avg_90d));
+  const best = candidates.find((c) => c.stat.avg_90d >= maxAvg - 0.5) ?? candidates[0];
+  const isCurrent = best.month === currentMonth && best.yearOffset === 0;
+
+  let buyStart: Date;
+  let buyEnd: Date;
+  if (isCurrent) {
+    buyStart = new Date(y, now.getMonth(), now.getDate());
+    while (buyStart.getDay() === 0 || buyStart.getDay() === 6) {
+      buyStart.setDate(buyStart.getDate() + 1);
+    }
+    buyEnd = new Date(y, now.getMonth() + 1, 0);
+  } else {
+    buyStart = new Date(y + best.yearOffset, best.month - 1, 1);
+    while (buyStart.getDay() === 0 || buyStart.getDay() === 6) {
+      buyStart.setDate(buyStart.getDate() + 1);
+    }
+    buyEnd = new Date(y + best.yearOffset, best.month, 0);
+  }
   while (buyEnd.getDay() === 0 || buyEnd.getDay() === 6) {
     buyEnd.setDate(buyEnd.getDate() - 1);
   }
+
   const sellCenter = new Date(buyStart);
   let count = 0;
   while (count < 90) {
@@ -119,14 +145,21 @@ const recommendedWindow = computed(() => {
   const sellEnd = new Date(sellCenter);
   sellEnd.setDate(sellEnd.getDate() + 10);
 
-  const fmt = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
-  const fmtMonth = (d: Date) => `${d.getMonth() + 1}月`;
   const sellStat = patternMonthly.value.find((r) => r.buy_month === sellCenter.getMonth() + 1);
+  const sellStartMonth = sellStart.getMonth() + 1;
+  const sellEndMonth = sellEnd.getMonth() + 1;
+  const sellLabel =
+    sellStartMonth === sellEndMonth
+      ? `${sellStartMonth}月頃`
+      : `${sellStartMonth}月〜${sellEndMonth}月頃`;
 
   return {
-    buyLabel: `${fmt(buyStart)} 〜 ${fmt(buyEnd)}`,
-    sellLabel: `${fmtMonth(sellStart)}中旬 〜 ${fmtMonth(sellEnd)}上旬`,
-    sellCenter: fmt(sellCenter),
+    buyLabel: isCurrent ? `${best.month}月中` : `${best.month}月中 (${isCurrent ? "今月" : "待つ"})`,
+    buyMonth: best.month,
+    buyAvg: best.stat.avg_90d,
+    buyWr: best.stat.wr_90d,
+    isCurrent,
+    sellLabel,
     sellMonthStat: sellStat ?? null,
   };
 });
@@ -370,6 +403,96 @@ const openFx = () => {
   currentView.value = "fx";
   if (fxTrades.value.length === 0) fetchFxSignals();
 };
+type WatchlistItem = {
+  id: number;
+  code: string;
+  signalDate: number;
+  entryPrice: number;
+  addedAt: number;
+  note: string | null;
+  name: string | null;
+  currentPrice: number;
+  currentDate: number | null;
+  changePct: number;
+  daysWatching: number;
+  inTodaysSignal: boolean;
+  lastSignalDate: number | null;
+  daysSinceLastSignal: number | null;
+  dropped: boolean;
+  priceRanAway: boolean;
+};
+const watchlistItems = ref<WatchlistItem[]>([]);
+const watchlistLoading = ref(false);
+const watching = ref<Record<string, boolean>>({});
+const removingWatch = ref<Record<number, boolean>>({});
+
+const fetchWatchlist = async () => {
+  watchlistLoading.value = true;
+  try {
+    const r = await fetch("/api/watchlist");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = (await r.json()) as { items: WatchlistItem[] };
+    watchlistItems.value = j.items;
+  } finally {
+    watchlistLoading.value = false;
+  }
+};
+
+const addToWatch = async (p: PatternPick) => {
+  watching.value[p.code] = true;
+  try {
+    const r = await fetch("/api/watchlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: p.code, signalDate: p.runDate, entryPrice: p.entryClose }),
+    });
+    const j = (await r.json()) as { error?: string; message?: string };
+    if (!r.ok) {
+      alert(`追加失敗: ${j.error}`);
+      return;
+    }
+    await fetchWatchlist();
+  } finally {
+    watching.value[p.code] = false;
+  }
+};
+
+const addAllToWatch = async () => {
+  if (!patternToday.value.length) return;
+  if (!confirm(`今日の ${patternToday.value.length} 件をまとめてウォッチに追加しますか?`)) return;
+  const items = patternToday.value.map((p) => ({
+    code: p.code,
+    signalDate: p.runDate,
+    entryPrice: p.entryClose,
+  }));
+  const r = await fetch("/api/watchlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  const j = (await r.json()) as { added?: number; message?: string };
+  await fetchWatchlist();
+  alert(`${j.added ?? 0} 件追加しました${j.message ? ` (${j.message})` : ""}`);
+};
+
+const removeFromWatch = async (id: number) => {
+  if (!confirm("ウォッチリストから外しますか?")) return;
+  removingWatch.value[id] = true;
+  try {
+    await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
+    await fetchWatchlist();
+  } finally {
+    removingWatch.value[id] = false;
+  }
+};
+
+const watchedCodeSet = computed(() => new Set(watchlistItems.value.map((w) => w.code)));
+const droppedWatchItems = computed(() => watchlistItems.value.filter((w) => w.dropped || w.priceRanAway));
+
+const openWatchlist = () => {
+  currentView.value = "watchlist";
+  fetchWatchlist();
+};
 const openPortfolio = () => {
   currentView.value = "portfolio";
   fetchPortfolio();
@@ -389,6 +512,7 @@ onMounted(async () => {
   }
   fetchPatternPicks();
   fetchPortfolio();
+  fetchWatchlist();
 });
 </script>
 
@@ -399,6 +523,9 @@ onMounted(async () => {
       <nav class="app-nav">
         <button :class="{ nav: true, active: currentView === 'home' }" @click="openHome">
           株
+        </button>
+        <button :class="{ nav: true, active: currentView === 'watchlist' }" @click="openWatchlist">
+          ウォッチ
         </button>
         <button :class="{ nav: true, active: currentView === 'portfolio' }" @click="openPortfolio">
           ポートフォリオ
@@ -427,20 +554,20 @@ onMounted(async () => {
           <strong>{{ patternCurrentMonthStat.wr_90d }}%</strong> / 平均
           <strong>{{ patternCurrentMonthStat.avg_90d > 0 ? "+" : "" }}{{ patternCurrentMonthStat.avg_90d }}%</strong>
         </div>
-        <div class="season-window">
+        <div v-if="recommendedWindow && !recommendedWindow.isCurrent" class="skip-notice">
+          ⏳ <strong>今月は見送り推奨</strong>: 近い将来 <strong>{{ recommendedWindow.buyMonth }}月 (+{{ recommendedWindow.buyAvg }}%, 勝率{{ recommendedWindow.buyWr }}%)</strong> がさらに強いので、そこまで待つのが有利
+        </div>
+        <div v-if="recommendedWindow" class="season-window">
           <div class="season-window-row">
-            <span class="season-window-label buy">🌱 推奨買付期間</span>
-            <strong>{{ recommendedWindow.buyLabel }}</strong>
+            <span class="season-window-label buy">🌱 推奨買付</span>
+            <strong>{{ recommendedWindow.buyMonth }}月中</strong>
           </div>
           <div class="season-window-row">
-            <span class="season-window-label sell">🌾 推奨売却期間</span>
+            <span class="season-window-label sell">🌾 推奨売却</span>
             <strong>{{ recommendedWindow.sellLabel }}</strong>
             <span v-if="recommendedWindow.sellMonthStat" class="season-rank-item">
               (売月実績: 平均{{ recommendedWindow.sellMonthStat.avg_90d > 0 ? "+" : "" }}{{ recommendedWindow.sellMonthStat.avg_90d }}%)
             </span>
-          </div>
-          <div v-if="nextStrongMonth" class="season-window-row hint">
-            💡 待てば{{ nextStrongMonth.buy_month }}月 (平均+{{ nextStrongMonth.avg_90d }}%, 勝率{{ nextStrongMonth.wr_90d }}%) に強月あり
           </div>
         </div>
         <div class="season-rank">
@@ -460,25 +587,29 @@ onMounted(async () => {
       </div>
       <div v-if="patternLoading" class="pattern-msg">読み込み中...</div>
       <div v-else-if="!patternToday.length" class="pattern-msg">本日は候補なし（マッチゼロ）</div>
-      <table v-else class="pattern-table">
+      <template v-else>
+      <div class="pattern-actions">
+        <button class="watch-all-btn" @click="addAllToWatch">今日の {{ patternToday.length }}件をまとめてウォッチ</button>
+      </div>
+      <table class="pattern-table">
         <thead>
           <tr>
             <th>コード</th>
             <th>銘柄名</th>
             <th class="num">エントリー</th>
-            <th>買付予定</th>
-            <th>売却予定</th>
             <th class="num">口数</th>
             <th>購入</th>
+            <th>ウォッチ</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in patternToday" :key="p.code">
-            <td>{{ p.code }}</td>
+          <tr v-for="p in patternToday" :key="p.code" :class="{ 'watched-row': watchedCodeSet.has(p.code) }">
+            <td>
+              <span v-if="watchedCodeSet.has(p.code)" class="watched-dot" title="ウォッチ中">★</span>
+              {{ p.code }}
+            </td>
             <td>{{ p.name ?? "-" }}</td>
             <td class="num">{{ Math.round(p.entryClose).toLocaleString() }}円</td>
-            <td>{{ nextBusinessDay(p.runDate) }}</td>
-            <td>{{ addBusinessDays(p.runDate, 90) }} <span class="pattern-n">(90取引日後)</span></td>
             <td class="num">
               <select v-model.number="buyLots[p.code]" class="lot-select">
                 <option v-for="n in 10" :key="n" :value="n">{{ n }}口 ({{ (n * 100 * p.entryClose).toLocaleString() }}円)</option>
@@ -489,10 +620,84 @@ onMounted(async () => {
                 {{ buying[p.code] ? "処理中..." : "買う" }}
               </button>
             </td>
+            <td>
+              <button
+                v-if="!watchedCodeSet.has(p.code)"
+                class="watch-btn"
+                :disabled="watching[p.code]"
+                @click="addToWatch(p)"
+              >
+                {{ watching[p.code] ? "..." : "追加" }}
+              </button>
+              <span v-else class="watched-tag">★ ウォッチ中</span>
+            </td>
           </tr>
         </tbody>
       </table>
+      </template>
 
+    </section>
+
+    <section v-else-if="currentView === 'watchlist'" class="pattern-panel">
+      <header class="pattern-header">
+        <h2>ウォッチリスト</h2>
+        <span class="pattern-meta">{{ watchlistItems.length }}件</span>
+      </header>
+      <div v-if="watchlistLoading" class="pattern-msg">読み込み中...</div>
+      <div v-else-if="!watchlistItems.length" class="pattern-msg">
+        ウォッチ中の銘柄はありません。「株」タブからピックを追加してください。
+      </div>
+      <template v-else>
+        <div v-if="droppedWatchItems.length" class="drop-warn">
+          <strong>⚠ 除外推奨 {{ droppedWatchItems.length }}件</strong> ·
+          直近signalから遠ざかった銘柄があります。買う必要がない銘柄として外すのが推奨です。
+        </div>
+        <table class="pattern-stats-table fx-trades">
+          <thead>
+            <tr>
+              <th>状態</th>
+              <th>追加日</th>
+              <th class="num">経過</th>
+              <th>コード</th>
+              <th>銘柄名</th>
+              <th class="num">エントリー</th>
+              <th class="num">現在値</th>
+              <th class="num">変動</th>
+              <th>最後signal</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="w in watchlistItems" :key="w.id" :class="{ 'drop-row': w.dropped || w.priceRanAway }">
+              <td>
+                <span v-if="w.inTodaysSignal" class="result-tag win">★ 再発生</span>
+                <span v-else-if="w.priceRanAway" class="result-tag drop">除外推奨 (上抜け)</span>
+                <span v-else-if="w.dropped" class="result-tag drop">除外推奨</span>
+                <span v-else class="result-tag pending">観察中</span>
+              </td>
+              <td>{{ fmtYmd(w.signalDate) }}</td>
+              <td class="num">{{ w.daysWatching }}日</td>
+              <td>{{ w.code }}</td>
+              <td>{{ w.name ?? "-" }}</td>
+              <td class="num">{{ Math.round(w.entryPrice) }}円</td>
+              <td class="num">{{ Math.round(w.currentPrice) }}円</td>
+              <td class="num" :class="{ pos: w.changePct > 0, neg: w.changePct < 0 }">
+                {{ w.changePct > 0 ? "+" : "" }}{{ w.changePct.toFixed(1) }}%
+              </td>
+              <td class="num">
+                <template v-if="w.inTodaysSignal">本日</template>
+                <template v-else-if="w.daysSinceLastSignal !== null">{{ w.daysSinceLastSignal }}日前</template>
+                <template v-else>-</template>
+              </td>
+              <td>
+                <button class="sell-btn" :disabled="removingWatch[w.id]" @click="removeFromWatch(w.id)">
+                  {{ removingWatch[w.id] ? "..." : "外す" }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
     </section>
 
     <section v-else-if="currentView === 'portfolio'" class="pattern-panel">
@@ -1051,6 +1256,14 @@ main {
   background: #fef3c7;
   color: #92400e;
 }
+.skip-notice {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #78350f;
+}
 .lot-select {
   padding: 0.2rem 0.3rem;
   border: 1px solid #cbd2da;
@@ -1091,5 +1304,74 @@ main {
 .sell-btn:disabled {
   background: #94a3b8;
   cursor: not-allowed;
+}
+.pattern-actions {
+  margin-bottom: 0.5rem;
+  display: flex;
+  gap: 0.4rem;
+}
+.watch-all-btn {
+  padding: 0.4rem 0.9rem;
+  background: #0ea5e9;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.watch-all-btn:hover {
+  background: #0284c7;
+}
+.watch-btn {
+  padding: 0.3rem 0.6rem;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.watch-btn:hover {
+  background: #bae6fd;
+}
+.watch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.watched-tag {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.watched-row td {
+  background: #fffbeb;
+}
+.watched-dot {
+  color: #d97706;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+.drop-warn {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+.drop-row td {
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+.result-tag.drop {
+  background: #fecaca;
+  color: #991b1b;
 }
 </style>
