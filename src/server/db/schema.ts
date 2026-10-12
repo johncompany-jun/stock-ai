@@ -39,81 +39,32 @@ export const candles = sqliteTable(
 
 export type Candle = typeof candles.$inferSelect;
 
-export const predictions = sqliteTable(
-  "predictions",
-  {
-    code: text("code").notNull(),
-    modelName: text("model_name").notNull(),
-    runAt: integer("run_at").notNull(),
-    lastDate: integer("last_date").notNull(),
-    lastClose: real("last_close").notNull(),
-    horizonDays: integer("horizon_days").notNull(),
-    predictedClose: real("predicted_close").notNull(),
-    expectedReturnPct: real("expected_return_pct").notNull(),
-    predsJson: text("preds_json").notNull(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.code, t.modelName] }),
-    returnIdx: index("predictions_return_idx").on(t.expectedReturnPct),
-    modelIdx: index("predictions_model_idx").on(t.modelName),
-  }),
-);
-
-export type Prediction = typeof predictions.$inferSelect;
-
-export const predictionLog = sqliteTable(
-  "prediction_log",
+export const patternPicks = sqliteTable(
+  "pattern_picks",
   {
     code: text("code").notNull(),
     runDate: integer("run_date").notNull(),
-    horizonDays: integer("horizon_days").notNull(),
-    modelName: text("model_name").notNull(),
-    lastClose: real("last_close").notNull(),
-    predictedClose: real("predicted_close").notNull(),
-    actualClose: real("actual_close"),
-    errorPct: real("error_pct"),
-    directionHit: integer("direction_hit"),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.code, t.runDate, t.horizonDays, t.modelName] }),
-    horizonIdx: index("prediction_log_horizon_idx").on(t.horizonDays, t.modelName),
-    runDateIdx: index("prediction_log_run_date_idx").on(t.runDate),
-  }),
-);
-
-export type PredictionLog = typeof predictionLog.$inferSelect;
-
-export const dailyPicks = sqliteTable(
-  "daily_picks",
-  {
-    code: text("code").notNull(),
-    runDate: integer("run_date").notNull(),
-    modelName: text("model_name").notNull(),
-    horizonDays: integer("horizon_days").notNull(),
-    lastClose: real("last_close").notNull(),
-    predictedClose: real("predicted_close").notNull(),
-    expectedReturnPct: real("expected_return_pct").notNull(),
-    confidence: integer("confidence").notNull(),
-    agreement: integer("agreement").notNull(),
-    agreementTotal: integer("agreement_total").notNull(),
-    returnStdevPct: real("return_stdev_pct").notNull(),
-    confidenceTier: text("confidence_tier"),
-    predsJson: text("preds_json").notNull(),
-    actualClose: real("actual_close"),
-    actualDate: integer("actual_date"),
-    directionHit: integer("direction_hit"),
-    returnPct: real("return_pct"),
+    patterns: text("patterns").notNull(),
+    entryClose: real("entry_close").notNull(),
+    actual5dClose: real("actual_5d_close"),
+    actual5dDate: integer("actual_5d_date"),
+    return5dPct: real("return_5d_pct"),
+    actual15dClose: real("actual_15d_close"),
+    actual15dDate: integer("actual_15d_date"),
+    return15dPct: real("return_15d_pct"),
+    actual30dClose: real("actual_30d_close"),
+    actual30dDate: integer("actual_30d_date"),
+    return30dPct: real("return_30d_pct"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.code, t.runDate] }),
-    runDateIdx: index("daily_picks_run_date_idx").on(t.runDate),
-    confidenceIdx: index("daily_picks_confidence_idx").on(t.confidence),
+    runDateIdx: index("pattern_picks_run_date_idx").on(t.runDate),
   }),
 );
 
-export type DailyPick = typeof dailyPicks.$inferSelect;
+export type PatternPick = typeof patternPicks.$inferSelect;
 
 export const fxCandles = sqliteTable(
   "fx_candles",

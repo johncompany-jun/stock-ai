@@ -31,32 +31,15 @@ jobs:
       - name: Fetch daily candles (diff mode) and apply to remote D1
         run: bun run scripts/fetch-candles.ts --remote --apply
 
-      - name: Predict (SMA cross) all stocks and apply to remote D1
+      - name: Snapshot today's pattern picks (Top 5)
         run: >
-          bun run scripts/predict-all.ts
-          --model sma_cross_v1
+          bun run scripts/pattern-save.ts
           --sourceUrl "$SOURCE_URL"
-          --days 365 --chunk 200
+          --days 1
           --apply --remote
 
-      - name: Predict (RSI reversal) all stocks and apply to remote D1
-        run: >
-          bun run scripts/predict-all.ts
-          --model rsi_reversal_v1
-          --sourceUrl "$SOURCE_URL"
-          --days 365 --chunk 200
-          --apply --remote
-
-      - name: Predict (Volume breakout) all stocks and apply to remote D1
-        run: >
-          bun run scripts/predict-all.ts
-          --model volume_breakout_v1
-          --sourceUrl "$SOURCE_URL"
-          --days 365 --chunk 200
-          --apply --remote
-
-      - name: Backfill daily_picks actuals from fresh candles
-        run: bun run scripts/backfill-daily-picks.ts --remote --apply
+      - name: Backfill pattern_picks actuals (5/15/30d)
+        run: bun run scripts/pattern-backfill.ts --remote --apply
 
       - name: Summary
         if: always()
@@ -64,6 +47,4 @@ jobs:
           bunx wrangler d1 execute stock-ai --remote --command \
             "SELECT COUNT(DISTINCT code) AS codes, COUNT(*) AS rows, MAX(date) AS latest FROM candles"
           bunx wrangler d1 execute stock-ai --remote --command \
-            "SELECT model_name, COUNT(*) AS n, MAX(run_at) AS latest_run FROM predictions GROUP BY model_name"
-          bunx wrangler d1 execute stock-ai --remote --command \
-            "SELECT COUNT(*) AS resolved, SUM(direction_hit) AS wins, ROUND(AVG(return_pct),3) AS avg_ret FROM daily_picks WHERE direction_hit IS NOT NULL AND confidence_tier='A'"
+            "SELECT COUNT(*) AS picks, SUM(CASE WHEN return_30d_pct IS NOT NULL THEN 1 ELSE 0 END) AS with_30d, ROUND(AVG(return_30d_pct),3) AS avg_30d, ROUND(100.0 * SUM(CASE WHEN return_30d_pct > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(return_30d_pct),0), 2) AS wr_30d FROM pattern_picks"
