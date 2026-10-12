@@ -1,0 +1,39 @@
+name: FX backfill pending predictions
+
+on:
+  schedule:
+    # 平日 12:00 JST = 03:00 UTC (11:00 JST 手仕舞い後、全て決着したタイミング)
+    - cron: "0 3 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: fx-backfill-pending
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_DATABASE_ID: a40fd260-c66d-433d-9739-2e8222304033
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Refresh yfinance candles for USD/JPY (last 2 days)
+        run: >
+          bun run scripts/fx-update-yfinance.ts
+          --pair USDJPY --symbol "JPY=X"
+          --daysBack 2
+          --remote
+
+      - name: Backfill pending FX predictions
+        run: bun run scripts/fx-backfill-pending.ts --pair USDJPY --remote

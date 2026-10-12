@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
-import { candles, patternPicks, stocks } from "./db/schema";
+import { candles, fxPredictions, patternPicks, stocks } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
@@ -187,6 +187,102 @@ app.get("/api/pattern-picks", async (c) => {
   }>;
 
   return c.json({ latestDate, today, agg, history });
+});
+
+app.get("/api/fx-signals", async (c) => {
+  const db = drizzle(c.env.DB);
+  const pair = c.req.query("pair") ?? "USDJPY";
+  const startCapital = Math.max(1, Number(c.req.query("startCapital") ?? "500000"));
+  const lotSize = Math.max(1, Number(c.req.query("lotSize") ?? "10000"));
+  const pipYen = lotSize / 100;
+
+  const rows = (await db
+    .select({
+      date: fxPredictions.date,
+      direction: fxPredictions.direction,
+      entryPrice: fxPredictions.entryPrice,
+      probability: fxPredictions.probability,
+      confidence: fxPredictions.confidence,
+      longWins: fxPredictions.longWins,
+      shortWins: fxPredictions.shortWins,
+      k: fxPredictions.k,
+      actualLabelPips: fxPredictions.actualLabelPips,
+      actualTpHitMin: fxPredictions.actualTpHitMin,
+      actualSlHitMin: fxPredictions.actualSlHitMin,
+      pnlPips: fxPredictions.pnlPips,
+      hit: fxPredictions.hit,
+      updatedAt: fxPredictions.updatedAt,
+    })
+    .from(fxPredictions)
+    .where(eq(fxPredictions.pair, pair))
+    .orderBy(asc(fxPredictions.date))) as Array<{
+    date: string;
+    direction: string;
+    entryPrice: number;
+    probability: number;
+    confidence: number;
+    longWins: number;
+    shortWins: number;
+    k: number;
+    actualLabelPips: number | null;
+    actualTpHitMin: number | null;
+    actualSlHitMin: number | null;
+    pnlPips: number | null;
+    hit: number | null;
+    updatedAt: number;
+  }>;
+
+  let equity = startCapital;
+  const trades = rows.map((r) => {
+    const resolved = r.pnlPips != null;
+    const pnlYen = resolved ? (r.pnlPips as number) * pipYen : null;
+    if (resolved) equity += pnlYen as number;
+    return {
+      ...r,
+      pnlYen,
+      equityAfter: resolved ? equity : null,
+    };
+  });
+
+  const resolved = trades.filter((t) => t.hit != null);
+  const wins = resolved.filter((t) => t.hit === 1).length;
+  const losses = resolved.filter((t) => t.hit === 0).length;
+  const totalPips = resolved.reduce((s, t) => s + (t.pnlPips ?? 0), 0);
+  const totalYen = resolved.reduce((s, t) => s + (t.pnlYen ?? 0), 0);
+  const finalEquity = startCapital + totalYen;
+  const returnPct = ((finalEquity - startCapital) / startCapital) * 100;
+
+  const equitySeries = trades
+    .filter((t) => t.equityAfter != null)
+    .map((t) => ({ date: t.date, equity: t.equityAfter as number }));
+  let peak = startCapital;
+  let maxDrawdown = 0;
+  for (const { equity: e } of equitySeries) {
+    if (e > peak) peak = e;
+    const dd = ((peak - e) / peak) * 100;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+  }
+
+  return c.json({
+    pair,
+    startCapital,
+    lotSize,
+    pipYen,
+    summary: {
+      n: trades.length,
+      resolved: resolved.length,
+      pending: trades.length - resolved.length,
+      wins,
+      losses,
+      winRate: resolved.length > 0 ? (wins / resolved.length) * 100 : null,
+      totalPips: Number(totalPips.toFixed(2)),
+      totalYen: Math.round(totalYen),
+      finalEquity: Math.round(finalEquity),
+      returnPct: Number(returnPct.toFixed(2)),
+      maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    },
+    trades,
+  });
 });
 
 const dispatchDailyFxSignal = async (token: string): Promise<void> => {

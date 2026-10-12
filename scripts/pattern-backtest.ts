@@ -5,6 +5,7 @@ import { volumeSurgeBreakout } from "./patterns/volume_surge_breakout";
 import { oversoldReversal } from "./patterns/oversold_reversal";
 import { pullbackToMa } from "./patterns/pullback_to_ma";
 import { gapDownReversal } from "./patterns/gap_down_reversal";
+import { rangeOscillatorBuy } from "./patterns/range_oscillator_buy";
 import type { Candle, Pattern } from "./patterns/types";
 
 const PATTERNS: Record<string, Pattern> = {
@@ -12,6 +13,7 @@ const PATTERNS: Record<string, Pattern> = {
   oversold_reversal: oversoldReversal,
   pullback_to_ma: pullbackToMa,
   gap_down_reversal: gapDownReversal,
+  range_oscillator_buy: rangeOscillatorBuy,
 };
 
 const { values } = parseArgs({

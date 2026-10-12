@@ -32,6 +32,10 @@ export type Outcome = {
 export type PredictionStore = {
   savePrediction: (p: Omit<SavedPrediction, "updatedAt">) => Promise<void>;
   getPrediction: (pair: string, date: string) => Promise<SavedPrediction | null>;
+  listPendingPredictions: (
+    pair: string,
+    beforeDate: string,
+  ) => Promise<SavedPrediction[]>;
   updateOutcome: (
     pair: string,
     date: string,
@@ -146,6 +150,19 @@ export const localPredictionStore = (dbPath?: string): PredictionStore => {
         db.close();
       }
     },
+    listPendingPredictions: async (pair, beforeDate) => {
+      const db = new Database(path, { readonly: true });
+      try {
+        const rows = db
+          .query<Record<string, unknown>, [string, string]>(
+            `SELECT * FROM fx_predictions WHERE pair = ? AND date < ? AND hit IS NULL ORDER BY date ASC`,
+          )
+          .all(pair, beforeDate);
+        return rows.map(rowToPrediction);
+      } finally {
+        db.close();
+      }
+    },
     updateOutcome: async (pair, date, outcome) => {
       const db = new Database(path);
       try {
@@ -240,6 +257,13 @@ export const remotePredictionStore = (config: {
         [pair, date],
       );
       return rows[0] ? rowToPrediction(rows[0]) : null;
+    },
+    listPendingPredictions: async (pair, beforeDate) => {
+      const rows = await query(
+        `SELECT * FROM fx_predictions WHERE pair = ? AND date < ? AND hit IS NULL ORDER BY date ASC`,
+        [pair, beforeDate],
+      );
+      return rows.map(rowToPrediction);
     },
     updateOutcome: async (pair, date, outcome) => {
       await query(

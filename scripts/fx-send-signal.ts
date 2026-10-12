@@ -376,6 +376,40 @@ const main = async () => {
 
   const r = await predict({ pair: PAIR, date, modelDir: MODEL_DIR, k: K, source });
 
+  try {
+    const pending = await store.listPendingPredictions(PAIR, date);
+    for (const p of pending) {
+      if (p.date === prevBusinessDay(date)) continue;
+      const outcome = await computeOutcome(source, PAIR, p.date, {
+        tpPips: TP_PIPS,
+        slPips: SL_PIPS,
+      });
+      if (!outcome) continue;
+      const pnl = computePnl(
+        p.direction,
+        {
+          actualLabelPips: outcome.label995Pips,
+          actualTpHitMin: outcome.tpHitMin,
+          actualSlHitMin: outcome.slHitMin,
+        },
+        TP_PIPS,
+        SL_PIPS,
+      );
+      if (!values.skipLog && !values.dryRun) {
+        await store.updateOutcome(PAIR, p.date, {
+          actualLabelPips: outcome.label995Pips,
+          actualTpHitMin: outcome.tpHitMin,
+          actualSlHitMin: outcome.slHitMin,
+          pnlPips: pnl.pnlPips,
+          hit: pnl.hit,
+        });
+        console.log(`backfilled ${p.date} ${p.direction} pnl=${pnl.pnlPips} hit=${pnl.hit}`);
+      }
+    }
+  } catch (e) {
+    console.warn(`過去保留のbackfill失敗 (継続): ${(e as Error).message}`);
+  }
+
   let yReport: YesterdayReport | null = null;
   try {
     yReport = await buildYesterdayReport(store, source, PAIR, date);
