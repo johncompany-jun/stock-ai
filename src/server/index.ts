@@ -86,7 +86,23 @@ app.get("/api/pattern-picks", async (c) => {
     .from(patternPicks);
   const latestDate = latestDateRow[0]?.d ?? null;
 
-  const today = latestDate
+  const perPatternRows = (await db
+    .select({
+      patterns: patternPicks.patterns,
+      n: sql<number>`COUNT(*)`,
+      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
+      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
+    })
+    .from(patternPicks)
+    .groupBy(patternPicks.patterns)) as Array<{
+    patterns: string;
+    n: number;
+    wr30d: number | null;
+    avg30d: number | null;
+  }>;
+  const perPatternMap = new Map(perPatternRows.map((r) => [r.patterns, r]));
+
+  const todayRaw = latestDate
     ? await db
         .select({
           code: patternPicks.code,
@@ -98,8 +114,41 @@ app.get("/api/pattern-picks", async (c) => {
         .from(patternPicks)
         .leftJoin(stocks, eq(stocks.code, patternPicks.code))
         .where(eq(patternPicks.runDate, latestDate))
-        .orderBy(asc(patternPicks.code))
     : [];
+
+  const scoreOf = (
+    avg: number | null,
+    wr: number | null,
+    n: number,
+  ): number | null => {
+    if (avg == null || wr == null) return null;
+    const reliability = Math.min(1, n / 100);
+    const winBonus = Math.max(0.5, Math.min(1.5, wr / 50));
+    return avg * reliability * winBonus;
+  };
+
+  const today = todayRaw
+    .map((r) => {
+      const s = perPatternMap.get(r.patterns);
+      const patternN = s?.n ?? 0;
+      const patternWr30d = s?.wr30d ?? null;
+      const patternAvg30d = s?.avg30d ?? null;
+      return {
+        ...r,
+        patternN,
+        patternWr30d,
+        patternAvg30d,
+        patternScore: scoreOf(patternAvg30d, patternWr30d, patternN),
+      };
+    })
+    .sort((a, b) => {
+      const av = a.patternScore;
+      const bv = b.patternScore;
+      if (av == null && bv == null) return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return bv - av;
+    });
 
   const [agg] = await db
     .select({

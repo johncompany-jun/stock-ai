@@ -9,6 +9,9 @@ type PatternPick = {
   patterns: string;
   entryClose: number;
   name: string | null;
+  patternN: number;
+  patternWr30d: number | null;
+  patternAvg30d: number | null;
 };
 type PatternAgg = {
   n: number;
@@ -118,6 +121,8 @@ onMounted(async () => {
             <th>銘柄名</th>
             <th class="num">エントリー</th>
             <th>パターン</th>
+            <th class="num" title="過去同一パターンの30日後平均リターン">30d平均</th>
+            <th class="num" title="過去同一パターンの30日勝率 (n=サンプル数)">30d勝率</th>
           </tr>
         </thead>
         <tbody>
@@ -127,6 +132,13 @@ onMounted(async () => {
             <td class="num">{{ Math.round(p.entryClose).toLocaleString() }}円</td>
             <td class="pattern-tags">
               <span v-for="tag in p.patterns.split(',')" :key="tag" class="pattern-tag">{{ tag }}</span>
+            </td>
+            <td class="num" :class="{ pos: (p.patternAvg30d ?? 0) > 0, neg: (p.patternAvg30d ?? 0) < 0 }">
+              {{ p.patternAvg30d != null ? fmtPct(p.patternAvg30d) : "-" }}
+            </td>
+            <td class="num">
+              {{ p.patternWr30d != null ? p.patternWr30d.toFixed(1) + "%" : "-" }}
+              <span class="pattern-n">n={{ p.patternN }}</span>
             </td>
           </tr>
         </tbody>
@@ -149,17 +161,6 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>5日</td>
-              <td class="num">{{ patternAgg.n5d.toLocaleString() }}</td>
-              <td class="num">{{ patternAgg.wr5d != null ? patternAgg.wr5d.toFixed(2) + "%" : "-" }}</td>
-              <td class="num" :class="{ pos: (patternAgg.avg5d ?? 0) > 0, neg: (patternAgg.avg5d ?? 0) < 0 }">
-                {{ patternAgg.avg5d != null ? fmtPct(patternAgg.avg5d) : "-" }}
-              </td>
-              <td class="num" :class="{ pos: (patternCumulative.avg5d ?? 0) > 0, neg: (patternCumulative.avg5d ?? 0) < 0 }">
-                {{ patternCumulative.avg5d != null ? fmtPct(patternCumulative.avg5d) : "-" }}
-              </td>
-            </tr>
             <tr>
               <td>15日</td>
               <td class="num">{{ patternAgg.n15d.toLocaleString() }}</td>
@@ -280,5 +281,17 @@ main {
 }
 .pattern-stats-table td.neg {
   color: #c0392b;
+}
+.pattern-table td.pos {
+  color: #198754;
+}
+.pattern-table td.neg {
+  color: #c0392b;
+}
+.pattern-n {
+  display: block;
+  color: #999;
+  font-size: 0.7rem;
+  font-weight: normal;
 }
 </style>
