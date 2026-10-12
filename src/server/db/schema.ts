@@ -66,6 +66,35 @@ export const patternPicks = sqliteTable(
 
 export type PatternPick = typeof patternPicks.$inferSelect;
 
+export const stockTrades = sqliteTable(
+  "stock_trades",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    strategy: text("strategy").notNull(),
+    code: text("code").notNull(),
+    signalDate: integer("signal_date").notNull(),
+    buyDate: integer("buy_date").notNull(),
+    buyPrice: real("buy_price").notNull(),
+    shares: integer("shares").notNull(),
+    investmentYen: real("investment_yen").notNull(),
+    sellDate: integer("sell_date"),
+    sellPrice: real("sell_price"),
+    pnlYen: real("pnl_yen"),
+    pnlPct: real("pnl_pct"),
+    exitReason: text("exit_reason"),
+    equityAfter: real("equity_after"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => ({
+    strategyIdx: index("stock_trades_strategy_idx").on(t.strategy),
+    buyDateIdx: index("stock_trades_buy_date_idx").on(t.buyDate),
+    sellDateIdx: index("stock_trades_sell_date_idx").on(t.sellDate),
+  }),
+);
+
+export type StockTrade = typeof stockTrades.$inferSelect;
+
 export const fxCandles = sqliteTable(
   "fx_candles",
   {

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
-import { candles, fxPredictions, patternPicks, stocks } from "./db/schema";
+import { candles, fxPredictions, patternPicks, stockTrades, stocks } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
@@ -187,6 +187,103 @@ app.get("/api/pattern-picks", async (c) => {
   }>;
 
   return c.json({ latestDate, today, agg, history });
+});
+
+app.get("/api/stock-trades", async (c) => {
+  const db = drizzle(c.env.DB);
+  const strategy = c.req.query("strategy") ?? "range_oscillator_v1";
+  const startCapital = Math.max(1, Number(c.req.query("startCapital") ?? "500000"));
+
+  const rows = (await db
+    .select({
+      id: stockTrades.id,
+      code: stockTrades.code,
+      signalDate: stockTrades.signalDate,
+      buyDate: stockTrades.buyDate,
+      buyPrice: stockTrades.buyPrice,
+      shares: stockTrades.shares,
+      investmentYen: stockTrades.investmentYen,
+      sellDate: stockTrades.sellDate,
+      sellPrice: stockTrades.sellPrice,
+      pnlYen: stockTrades.pnlYen,
+      pnlPct: stockTrades.pnlPct,
+      exitReason: stockTrades.exitReason,
+      equityAfter: stockTrades.equityAfter,
+      name: stocks.name,
+    })
+    .from(stockTrades)
+    .leftJoin(stocks, eq(stocks.code, stockTrades.code))
+    .where(eq(stockTrades.strategy, strategy))
+    .orderBy(asc(stockTrades.sellDate), asc(stockTrades.buyDate))) as Array<{
+    id: number;
+    code: string;
+    signalDate: number;
+    buyDate: number;
+    buyPrice: number;
+    shares: number;
+    investmentYen: number;
+    sellDate: number | null;
+    sellPrice: number | null;
+    pnlYen: number | null;
+    pnlPct: number | null;
+    exitReason: string | null;
+    equityAfter: number | null;
+    name: string | null;
+  }>;
+
+  const resolved = rows.filter((r) => r.pnlYen != null);
+  const wins = resolved.filter((r) => (r.pnlYen as number) > 0).length;
+  const losses = resolved.length - wins;
+  const totalPnl = resolved.reduce((s, r) => s + (r.pnlYen ?? 0), 0);
+  const finalEquity = startCapital + totalPnl;
+  const returnPct = ((finalEquity - startCapital) / startCapital) * 100;
+  const firstDate = rows.length > 0 ? rows[0].buyDate : null;
+  const lastDate = rows.length > 0 ? (rows[rows.length - 1].sellDate ?? rows[rows.length - 1].buyDate) : null;
+  const years =
+    firstDate && lastDate ? Math.max(0.01, (lastDate - firstDate) / 10000) : null;
+  const annualizedPct = years ? returnPct / years : null;
+
+  let peak = startCapital;
+  let maxDrawdown = 0;
+  for (const r of rows) {
+    const e = r.equityAfter;
+    if (e == null) continue;
+    if (e > peak) peak = e;
+    const dd = ((peak - e) / peak) * 100;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+  }
+
+  const bestTrade =
+    resolved.length > 0
+      ? [...resolved].sort((a, b) => (b.pnlYen as number) - (a.pnlYen as number))[0]
+      : null;
+  const worstTrade =
+    resolved.length > 0
+      ? [...resolved].sort((a, b) => (a.pnlYen as number) - (b.pnlYen as number))[0]
+      : null;
+
+  return c.json({
+    strategy,
+    startCapital,
+    summary: {
+      n: rows.length,
+      resolved: resolved.length,
+      pending: rows.length - resolved.length,
+      wins,
+      losses,
+      winRate: resolved.length > 0 ? (wins / resolved.length) * 100 : null,
+      totalPnl: Math.round(totalPnl),
+      finalEquity: Math.round(finalEquity),
+      returnPct: Number(returnPct.toFixed(2)),
+      annualizedPct: annualizedPct != null ? Number(annualizedPct.toFixed(2)) : null,
+      maxDrawdown: Number(maxDrawdown.toFixed(2)),
+      firstDate,
+      lastDate,
+      bestTrade,
+      worstTrade,
+    },
+    trades: rows,
+  });
 });
 
 app.get("/api/fx-signals", async (c) => {

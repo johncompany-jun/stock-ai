@@ -4,7 +4,7 @@ const RANGE_WINDOW = 90;
 const DRIFT_WINDOW = 252;
 const MIN_AMPLITUDE = 0.15;
 const MAX_DRIFT = 0.15;
-const BUY_POSITION = 0.3;
+const BUY_POSITION = 0.30;
 
 export const rangeOscillatorBuy: Pattern = {
   name: "range_oscillator_buy",

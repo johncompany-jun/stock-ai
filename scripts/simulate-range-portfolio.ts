@@ -1,5 +1,7 @@
 import { Database } from "bun:sqlite";
-import { readdirSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { Candle } from "./patterns/types";
 
@@ -7,7 +9,7 @@ const RANGE_WINDOW = 90;
 const DRIFT_WINDOW = 252;
 const MIN_AMPLITUDE = 0.15;
 const MAX_DRIFT = 0.15;
-const BUY_POSITION = 0.3;
+const BUY_POSITION = 0.30;
 
 const { values } = parseArgs({
   options: {
@@ -19,6 +21,10 @@ const { values } = parseArgs({
     minPrice: { type: "string", default: "100" },
     maxPrice: { type: "string", default: "2000" },
     sourceUrl: { type: "string" },
+    strategy: { type: "string", default: "range_oscillator_v1" },
+    out: { type: "string", default: "data/stock_trades.sql" },
+    apply: { type: "boolean", default: false },
+    remote: { type: "boolean", default: false },
   },
 });
 
@@ -293,6 +299,49 @@ const main = () => {
       console.log(`  ${date}  ${Math.round(equity).toLocaleString()}円  (${(((equity - START_CAPITAL) / START_CAPITAL) * 100).toFixed(2)}%)`);
       lastMonth = month;
     }
+  }
+
+  const strategy = values.strategy!;
+  const outPath = resolve(process.cwd(), values.out!);
+  const now = Math.floor(Date.now() / 1000);
+
+  const equityByDate = new Map<number, number>();
+  for (const e of equitySeries) equityByDate.set(e.date, e.equity);
+
+  const sortedTrades = [...trades].sort((a, b) => a.sellDate - b.sellDate || a.buyDate - b.buyDate);
+  const chunks: string[] = [];
+  chunks.push(`DELETE FROM stock_trades WHERE strategy = '${strategy.replace(/'/g, "''")}';`);
+  const BATCH = 100;
+  for (let i = 0; i < sortedTrades.length; i += BATCH) {
+    const slice = sortedTrades.slice(i, i + BATCH);
+    const vals = slice
+      .map((t) => {
+        const equityAfter = equityByDate.get(t.sellDate) ?? "NULL";
+        return `('${strategy.replace(/'/g, "''")}','${t.code.replace(/'/g, "''")}',${t.signalDate},${t.buyDate},${t.buyPrice},${t.shares},${t.investment},${t.sellDate},${t.sellPrice},${t.pnlYen},${t.pnlPct},'time_limit',${equityAfter},${now},${now})`;
+      })
+      .join(",\n");
+    chunks.push(
+      `INSERT INTO stock_trades (strategy,code,signal_date,buy_date,buy_price,shares,investment_yen,sell_date,sell_price,pnl_yen,pnl_pct,exit_reason,equity_after,created_at,updated_at) VALUES\n${vals};`,
+    );
+  }
+
+  mkdirSync(dirname(outPath), { recursive: true });
+  writeFileSync(outPath, chunks.join("\n\n") + "\n", "utf8");
+  console.log(`\nwrote SQL: ${outPath} (${sortedTrades.length} trades)`);
+
+  if (values.apply) {
+    const remoteFlag = values.remote ? "--remote" : "--local";
+    console.log(`applying to D1 (${remoteFlag})...`);
+    const res = spawnSync(
+      "bunx",
+      ["wrangler", "d1", "execute", "stock-ai", remoteFlag, "--file", outPath],
+      { stdio: "inherit" },
+    );
+    if (res.status !== 0) {
+      console.error(`wrangler apply failed with exit ${res.status}`);
+      process.exit(1);
+    }
+    console.log(`applied.`);
   }
 
   db.close();
