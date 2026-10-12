@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
-type View = "home" | "stock-portfolio" | "fx";
+type View = "home" | "portfolio" | "fx";
 const currentView = ref<View>("home");
 
 const apiStatus = ref("checking...");
@@ -94,6 +94,55 @@ const currentMonthVerdict = computed(() => {
   if (avg >= 1) return { label: "★ 普通の月", tone: "neutral-pos" };
   if (avg >= 0) return { label: "△ 弱め、様子見推奨", tone: "neutral-neg" };
   return { label: "✗ 休耕月、見送り推奨", tone: "neg" };
+});
+
+const recommendedWindow = computed(() => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const buyStart = new Date(y, m, now.getDate());
+  while (buyStart.getDay() === 0 || buyStart.getDay() === 6) {
+    buyStart.setDate(buyStart.getDate() + 1);
+  }
+  const buyEnd = new Date(y, m + 1, 0);
+  while (buyEnd.getDay() === 0 || buyEnd.getDay() === 6) {
+    buyEnd.setDate(buyEnd.getDate() - 1);
+  }
+  const sellCenter = new Date(buyStart);
+  let count = 0;
+  while (count < 90) {
+    sellCenter.setDate(sellCenter.getDate() + 1);
+    if (sellCenter.getDay() !== 0 && sellCenter.getDay() !== 6) count++;
+  }
+  const sellStart = new Date(sellCenter);
+  sellStart.setDate(sellStart.getDate() - 10);
+  const sellEnd = new Date(sellCenter);
+  sellEnd.setDate(sellEnd.getDate() + 10);
+
+  const fmt = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+  const fmtMonth = (d: Date) => `${d.getMonth() + 1}月`;
+  const sellStat = patternMonthly.value.find((r) => r.buy_month === sellCenter.getMonth() + 1);
+
+  return {
+    buyLabel: `${fmt(buyStart)} 〜 ${fmt(buyEnd)}`,
+    sellLabel: `${fmtMonth(sellStart)}中旬 〜 ${fmtMonth(sellEnd)}上旬`,
+    sellCenter: fmt(sellCenter),
+    sellMonthStat: sellStat ?? null,
+  };
+});
+
+const nextStrongMonth = computed(() => {
+  const now = new Date();
+  const current = now.getMonth() + 1;
+  const future: MonthlyStat[] = [];
+  for (let i = 1; i <= 11; i++) {
+    const m = ((current - 1 + i) % 12) + 1;
+    const stat = patternMonthly.value.find((r) => r.buy_month === m);
+    if (stat && stat.avg_90d > (patternCurrentMonthStat.value?.avg_90d ?? 0) + 1.5) {
+      future.push(stat);
+    }
+  }
+  return future[0] ?? null;
 });
 
 const fmtYmd = (ymd: number | null): string => {
@@ -210,10 +259,25 @@ const fetchFxSignals = async () => {
   }
 };
 
-type StockTrade = {
+type OpenHolding = {
   id: number;
   code: string;
+  name: string | null;
   signalDate: number;
+  buyDate: number;
+  buyPrice: number;
+  shares: number;
+  investmentYen: number;
+  currentPrice: number;
+  currentDate: number | null;
+  currentValue: number;
+  unrealizedYen: number;
+  unrealizedPct: number;
+};
+type ClosedTrade = {
+  id: number;
+  code: string;
+  name: string | null;
   buyDate: number;
   buyPrice: number;
   shares: number;
@@ -222,47 +286,83 @@ type StockTrade = {
   sellPrice: number | null;
   pnlYen: number | null;
   pnlPct: number | null;
-  exitReason: string | null;
-  equityAfter: number | null;
-  name: string | null;
 };
-type StockSummary = {
-  n: number;
-  resolved: number;
-  pending: number;
-  wins: number;
-  losses: number;
-  winRate: number | null;
+type Portfolio = {
+  startCapital: number;
+  cash: number;
+  holdingsValue: number;
+  equity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
   totalPnl: number;
-  finalEquity: number;
   returnPct: number;
-  annualizedPct: number | null;
-  maxDrawdown: number;
-  firstDate: number | null;
-  lastDate: number | null;
-  bestTrade: StockTrade | null;
-  worstTrade: StockTrade | null;
+  open: OpenHolding[];
+  closed: ClosedTrade[];
 };
-const stockTrades = ref<StockTrade[]>([]);
-const stockSummary = ref<StockSummary | null>(null);
-const stockStartCapital = ref(500000);
-const stockLoading = ref(false);
+const portfolio = ref<Portfolio | null>(null);
+const portfolioLoading = ref(false);
+const buyLots = ref<Record<string, number>>({});
+const buying = ref<Record<string, boolean>>({});
+const selling = ref<Record<number, boolean>>({});
 
-const fetchStockTrades = async () => {
-  stockLoading.value = true;
+const fetchPortfolio = async () => {
+  portfolioLoading.value = true;
   try {
-    const r = await fetch("/api/stock-trades");
+    const r = await fetch("/api/portfolio");
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const j = (await r.json()) as {
-      startCapital: number;
-      summary: StockSummary;
-      trades: StockTrade[];
-    };
-    stockStartCapital.value = j.startCapital;
-    stockSummary.value = j.summary;
-    stockTrades.value = [...j.trades].reverse();
+    portfolio.value = (await r.json()) as Portfolio;
   } finally {
-    stockLoading.value = false;
+    portfolioLoading.value = false;
+  }
+};
+
+const buyPick = async (p: PatternPick) => {
+  const lots = buyLots.value[p.code] ?? 1;
+  const shares = lots * 100;
+  const investment = p.entryClose * shares;
+  if (!confirm(`${p.code} ${p.name ?? ""} を ${lots}口 (${shares}株) 購入\n投資額: ${investment.toLocaleString()}円`)) return;
+  buying.value[p.code] = true;
+  try {
+    const r = await fetch("/api/portfolio/buy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: p.code,
+        signalDate: p.runDate,
+        buyPrice: p.entryClose,
+        shares,
+      }),
+    });
+    const j = (await r.json()) as { error?: string };
+    if (!r.ok) {
+      alert(`購入失敗: ${j.error}`);
+      return;
+    }
+    await fetchPortfolio();
+    alert(`購入しました: ${p.code} ${lots}口`);
+  } finally {
+    buying.value[p.code] = false;
+  }
+};
+
+const sellHolding = async (h: OpenHolding) => {
+  if (!confirm(`${h.code} ${h.name ?? ""} ${h.shares}株 を売却\n現在値 ${Math.round(h.currentPrice)}円 (${h.unrealizedPct > 0 ? "+" : ""}${h.unrealizedPct.toFixed(2)}%)`)) return;
+  selling.value[h.id] = true;
+  try {
+    const r = await fetch("/api/portfolio/sell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: h.id }),
+    });
+    const j = (await r.json()) as { error?: string; pnlYen?: number; pnlPct?: number };
+    if (!r.ok) {
+      alert(`売却失敗: ${j.error}`);
+      return;
+    }
+    await fetchPortfolio();
+    alert(`売却しました: ${fmtYen(j.pnlYen ?? 0)} (${(j.pnlPct ?? 0) > 0 ? "+" : ""}${j.pnlPct}%)`);
+  } finally {
+    selling.value[h.id] = false;
   }
 };
 
@@ -270,12 +370,13 @@ const openFx = () => {
   currentView.value = "fx";
   if (fxTrades.value.length === 0) fetchFxSignals();
 };
-const openStockPortfolio = () => {
-  currentView.value = "stock-portfolio";
-  if (stockTrades.value.length === 0) fetchStockTrades();
+const openPortfolio = () => {
+  currentView.value = "portfolio";
+  fetchPortfolio();
 };
 const openHome = () => {
   currentView.value = "home";
+  if (!portfolio.value) fetchPortfolio();
 };
 
 onMounted(async () => {
@@ -287,6 +388,7 @@ onMounted(async () => {
     apiStatus.value = "error";
   }
   fetchPatternPicks();
+  fetchPortfolio();
 });
 </script>
 
@@ -298,8 +400,8 @@ onMounted(async () => {
         <button :class="{ nav: true, active: currentView === 'home' }" @click="openHome">
           株
         </button>
-        <button :class="{ nav: true, active: currentView === 'stock-portfolio' }" @click="openStockPortfolio">
-          株検証
+        <button :class="{ nav: true, active: currentView === 'portfolio' }" @click="openPortfolio">
+          ポートフォリオ
         </button>
         <button :class="{ nav: true, active: currentView === 'fx' }" @click="openFx">
           FX
@@ -325,6 +427,22 @@ onMounted(async () => {
           <strong>{{ patternCurrentMonthStat.wr_90d }}%</strong> / 平均
           <strong>{{ patternCurrentMonthStat.avg_90d > 0 ? "+" : "" }}{{ patternCurrentMonthStat.avg_90d }}%</strong>
         </div>
+        <div class="season-window">
+          <div class="season-window-row">
+            <span class="season-window-label buy">🌱 推奨買付期間</span>
+            <strong>{{ recommendedWindow.buyLabel }}</strong>
+          </div>
+          <div class="season-window-row">
+            <span class="season-window-label sell">🌾 推奨売却期間</span>
+            <strong>{{ recommendedWindow.sellLabel }}</strong>
+            <span v-if="recommendedWindow.sellMonthStat" class="season-rank-item">
+              (売月実績: 平均{{ recommendedWindow.sellMonthStat.avg_90d > 0 ? "+" : "" }}{{ recommendedWindow.sellMonthStat.avg_90d }}%)
+            </span>
+          </div>
+          <div v-if="nextStrongMonth" class="season-window-row hint">
+            💡 待てば{{ nextStrongMonth.buy_month }}月 (平均+{{ nextStrongMonth.avg_90d }}%, 勝率{{ nextStrongMonth.wr_90d }}%) に強月あり
+          </div>
+        </div>
         <div class="season-rank">
           <span class="season-rank-group">
             <span class="season-rank-label pos">強い月</span>
@@ -348,8 +466,10 @@ onMounted(async () => {
             <th>コード</th>
             <th>銘柄名</th>
             <th class="num">エントリー</th>
-            <th>買付日</th>
-            <th>売却予定日</th>
+            <th>買付予定</th>
+            <th>売却予定</th>
+            <th class="num">口数</th>
+            <th>購入</th>
           </tr>
         </thead>
         <tbody>
@@ -359,82 +479,109 @@ onMounted(async () => {
             <td class="num">{{ Math.round(p.entryClose).toLocaleString() }}円</td>
             <td>{{ nextBusinessDay(p.runDate) }}</td>
             <td>{{ addBusinessDays(p.runDate, 90) }} <span class="pattern-n">(90取引日後)</span></td>
+            <td class="num">
+              <select v-model.number="buyLots[p.code]" class="lot-select">
+                <option v-for="n in 10" :key="n" :value="n">{{ n }}口 ({{ (n * 100 * p.entryClose).toLocaleString() }}円)</option>
+              </select>
+            </td>
+            <td>
+              <button class="buy-btn" :disabled="buying[p.code]" @click="buyPick(p)">
+                {{ buying[p.code] ? "処理中..." : "買う" }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
 
     </section>
 
-    <section v-else-if="currentView === 'stock-portfolio'" class="pattern-panel">
+    <section v-else-if="currentView === 'portfolio'" class="pattern-panel">
       <header class="pattern-header">
-        <h2>株 検証ポートフォリオ (range_oscillator_v1)</h2>
-        <span class="pattern-meta">
-          50万円スタート / 10万円×5スロット / 90日保有
-        </span>
+        <h2>ポートフォリオ</h2>
+        <span class="pattern-meta">50万円スタート / 手動買付売却</span>
       </header>
 
-      <div v-if="stockLoading" class="pattern-msg">読み込み中...</div>
-      <div v-else-if="!stockSummary" class="pattern-msg">データなし</div>
+      <div v-if="portfolioLoading" class="pattern-msg">読み込み中...</div>
+      <div v-else-if="!portfolio" class="pattern-msg">データなし</div>
 
       <div v-else>
         <div class="fx-summary">
           <div class="fx-card">
-            <span class="fx-card-label">開始残高</span>
-            <span class="fx-card-value">{{ stockStartCapital.toLocaleString() }}円</span>
+            <span class="fx-card-label">残高</span>
+            <span class="fx-card-value">{{ portfolio.cash.toLocaleString() }}円</span>
+            <span class="fx-card-sub">保有評価額 {{ portfolio.holdingsValue.toLocaleString() }}円</span>
           </div>
           <div class="fx-card">
-            <span class="fx-card-label">現在残高</span>
+            <span class="fx-card-label">資産合計</span>
             <span
               class="fx-card-value big"
-              :class="{ pos: stockSummary.returnPct > 0, neg: stockSummary.returnPct < 0 }"
-            >{{ stockSummary.finalEquity.toLocaleString() }}円</span>
+              :class="{ pos: portfolio.returnPct > 0, neg: portfolio.returnPct < 0 }"
+            >{{ portfolio.equity.toLocaleString() }}円</span>
             <span
               class="fx-card-sub"
-              :class="{ pos: stockSummary.returnPct > 0, neg: stockSummary.returnPct < 0 }"
+              :class="{ pos: portfolio.returnPct > 0, neg: portfolio.returnPct < 0 }"
             >
-              {{ fmtYen(stockSummary.totalPnl) }} ({{ stockSummary.returnPct > 0 ? "+" : "" }}{{ Math.round(stockSummary.returnPct) }}%)
+              {{ fmtYen(portfolio.totalPnl) }} ({{ portfolio.returnPct > 0 ? "+" : "" }}{{ Math.round(portfolio.returnPct) }}%)
             </span>
           </div>
           <div class="fx-card">
-            <span class="fx-card-label">年率</span>
-            <span
-              class="fx-card-value"
-              :class="{ pos: (stockSummary.annualizedPct ?? 0) > 0, neg: (stockSummary.annualizedPct ?? 0) < 0 }"
-            >
-              {{ stockSummary.annualizedPct != null ? (stockSummary.annualizedPct > 0 ? "+" : "") + Math.round(stockSummary.annualizedPct) + "%" : "-" }}
+            <span class="fx-card-label">実現損益</span>
+            <span class="fx-card-value" :class="{ pos: portfolio.realizedPnl > 0, neg: portfolio.realizedPnl < 0 }">
+              {{ fmtYen(portfolio.realizedPnl) }}
             </span>
-            <span class="fx-card-sub">最大DD {{ Math.round(stockSummary.maxDrawdown) }}%</span>
+            <span class="fx-card-sub">決済済み</span>
           </div>
           <div class="fx-card">
-            <span class="fx-card-label">勝率</span>
-            <span class="fx-card-value">
-              {{ stockSummary.winRate != null ? Math.round(stockSummary.winRate) + "%" : "-" }}
+            <span class="fx-card-label">含み損益</span>
+            <span class="fx-card-value" :class="{ pos: portfolio.unrealizedPnl > 0, neg: portfolio.unrealizedPnl < 0 }">
+              {{ fmtYen(portfolio.unrealizedPnl) }}
             </span>
-            <span class="fx-card-sub">
-              {{ stockSummary.wins }}勝 {{ stockSummary.losses }}負 / 保留 {{ stockSummary.pending }}
-            </span>
+            <span class="fx-card-sub">保有中</span>
           </div>
         </div>
 
-        <div v-if="stockSummary.bestTrade || stockSummary.worstTrade" class="stock-highlights">
-          <div v-if="stockSummary.bestTrade" class="highlight-row">
-            <span class="highlight-label pos">ベスト</span>
-            {{ stockSummary.bestTrade.code }} {{ stockSummary.bestTrade.name ?? "" }}
-            {{ fmtYmd(stockSummary.bestTrade.buyDate) }} → {{ fmtYmd(stockSummary.bestTrade.sellDate) }}
-            <strong class="pos">{{ fmtYen(stockSummary.bestTrade.pnlYen ?? 0) }}</strong>
-            ({{ Math.round(stockSummary.bestTrade.pnlPct ?? 0) }}%)
-          </div>
-          <div v-if="stockSummary.worstTrade" class="highlight-row">
-            <span class="highlight-label neg">ワースト</span>
-            {{ stockSummary.worstTrade.code }} {{ stockSummary.worstTrade.name ?? "" }}
-            {{ fmtYmd(stockSummary.worstTrade.buyDate) }} → {{ fmtYmd(stockSummary.worstTrade.sellDate) }}
-            <strong class="neg">{{ fmtYen(stockSummary.worstTrade.pnlYen ?? 0) }}</strong>
-            ({{ Math.round(stockSummary.worstTrade.pnlPct ?? 0) }}%)
-          </div>
-        </div>
+        <h3 class="fx-section-title">保有銘柄 ({{ portfolio.open.length }}件)</h3>
+        <table v-if="portfolio.open.length" class="pattern-stats-table fx-trades">
+          <thead>
+            <tr>
+              <th>買付日</th>
+              <th>コード</th>
+              <th>銘柄名</th>
+              <th class="num">買値</th>
+              <th class="num">株数</th>
+              <th class="num">投資額</th>
+              <th class="num">現在値</th>
+              <th class="num">評価額</th>
+              <th class="num">含み損益</th>
+              <th>売却</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="h in portfolio.open" :key="h.id">
+              <td>{{ fmtYmd(h.buyDate) }}</td>
+              <td>{{ h.code }}</td>
+              <td>{{ h.name ?? "-" }}</td>
+              <td class="num">{{ Math.round(h.buyPrice) }}円</td>
+              <td class="num">{{ h.shares }}</td>
+              <td class="num">{{ Math.round(h.investmentYen).toLocaleString() }}円</td>
+              <td class="num">{{ Math.round(h.currentPrice) }}円</td>
+              <td class="num">{{ Math.round(h.currentValue).toLocaleString() }}円</td>
+              <td class="num" :class="{ pos: h.unrealizedYen > 0, neg: h.unrealizedYen < 0 }">
+                {{ fmtYen(h.unrealizedYen) }}
+                <span class="pattern-n">({{ h.unrealizedPct > 0 ? "+" : "" }}{{ h.unrealizedPct.toFixed(1) }}%)</span>
+              </td>
+              <td>
+                <button class="sell-btn" :disabled="selling[h.id]" @click="sellHolding(h)">
+                  {{ selling[h.id] ? "処理中..." : "売る" }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="pattern-msg">保有銘柄なし。「株」タブでピックを購入してください。</div>
 
-        <h3 class="fx-section-title">トレード履歴 ({{ stockTrades.length }}件)</h3>
-        <table class="pattern-stats-table fx-trades">
+        <h3 class="fx-section-title">決済済みトレード ({{ portfolio.closed.length }}件)</h3>
+        <table v-if="portfolio.closed.length" class="pattern-stats-table fx-trades">
           <thead>
             <tr>
               <th>買付</th>
@@ -443,31 +590,30 @@ onMounted(async () => {
               <th>銘柄名</th>
               <th class="num">買値</th>
               <th class="num">売値</th>
+              <th class="num">株数</th>
               <th class="num">損益</th>
               <th class="num">率</th>
-              <th class="num">残高</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in stockTrades" :key="t.id">
+            <tr v-for="t in portfolio.closed" :key="t.id">
               <td>{{ fmtYmd(t.buyDate) }}</td>
               <td>{{ t.sellDate != null ? fmtYmd(t.sellDate) : "-" }}</td>
               <td>{{ t.code }}</td>
               <td>{{ t.name ?? "-" }}</td>
               <td class="num">{{ Math.round(t.buyPrice) }}</td>
               <td class="num">{{ t.sellPrice != null ? Math.round(t.sellPrice) : "-" }}</td>
+              <td class="num">{{ t.shares }}</td>
               <td class="num" :class="{ pos: (t.pnlYen ?? 0) > 0, neg: (t.pnlYen ?? 0) < 0 }">
                 {{ t.pnlYen != null ? fmtYen(t.pnlYen) : "-" }}
               </td>
               <td class="num" :class="{ pos: (t.pnlPct ?? 0) > 0, neg: (t.pnlPct ?? 0) < 0 }">
-                {{ t.pnlPct != null ? (t.pnlPct > 0 ? "+" : "") + Math.round(t.pnlPct) + "%" : "-" }}
-              </td>
-              <td class="num">
-                {{ t.equityAfter != null ? Math.round(t.equityAfter).toLocaleString() + "円" : "-" }}
+                {{ t.pnlPct != null ? (t.pnlPct > 0 ? "+" : "") + t.pnlPct.toFixed(1) + "%" : "-" }}
               </td>
             </tr>
           </tbody>
         </table>
+        <div v-else class="pattern-msg">決済履歴なし</div>
       </div>
     </section>
 
@@ -871,5 +1017,79 @@ main {
 }
 .season-rank-item {
   color: #444;
+}
+.season-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.4rem 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+  font-size: 0.85rem;
+}
+.season-window-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.season-window-row.hint {
+  color: #555;
+  font-size: 0.75rem;
+}
+.season-window-label {
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.season-window-label.buy {
+  background: #d1fae5;
+  color: #065f46;
+}
+.season-window-label.sell {
+  background: #fef3c7;
+  color: #92400e;
+}
+.lot-select {
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #cbd2da;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  background: #fff;
+}
+.buy-btn {
+  padding: 0.3rem 0.7rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.buy-btn:hover {
+  background: #1d4ed8;
+}
+.buy-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+.sell-btn {
+  padding: 0.3rem 0.7rem;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.sell-btn:hover {
+  background: #b91c1c;
+}
+.sell-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
 }
 </style>

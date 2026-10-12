@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
-import { candles, fxPredictions, patternPicks, stockTrades, stocks } from "./db/schema";
+import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades } from "./db/schema";
 
 type Bindings = {
   DB: D1Database;
@@ -424,6 +424,211 @@ app.get("/api/fx-signals", async (c) => {
     },
     trades,
   });
+});
+
+const PORTFOLIO_START_CAPITAL = 500000;
+
+const getLatestClose = async (
+  db: ReturnType<typeof drizzle>,
+  code: string,
+): Promise<{ date: number; close: number } | null> => {
+  const [row] = await db
+    .select({ date: candles.date, close: candles.close })
+    .from(candles)
+    .where(and(eq(candles.code, code), sql`${candles.close} > 0`))
+    .orderBy(desc(candles.date))
+    .limit(1);
+  return row ?? null;
+};
+
+app.get("/api/portfolio", async (c) => {
+  const db = drizzle(c.env.DB);
+  const rows = (await db
+    .select({
+      id: virtualPortfolioTrades.id,
+      code: virtualPortfolioTrades.code,
+      signalDate: virtualPortfolioTrades.signalDate,
+      buyDate: virtualPortfolioTrades.buyDate,
+      buyPrice: virtualPortfolioTrades.buyPrice,
+      shares: virtualPortfolioTrades.shares,
+      investmentYen: virtualPortfolioTrades.investmentYen,
+      sellDate: virtualPortfolioTrades.sellDate,
+      sellPrice: virtualPortfolioTrades.sellPrice,
+      pnlYen: virtualPortfolioTrades.pnlYen,
+      pnlPct: virtualPortfolioTrades.pnlPct,
+      createdAt: virtualPortfolioTrades.createdAt,
+      name: stocks.name,
+    })
+    .from(virtualPortfolioTrades)
+    .leftJoin(stocks, eq(stocks.code, virtualPortfolioTrades.code))
+    .orderBy(desc(virtualPortfolioTrades.createdAt))) as Array<{
+    id: number;
+    code: string;
+    signalDate: number;
+    buyDate: number;
+    buyPrice: number;
+    shares: number;
+    investmentYen: number;
+    sellDate: number | null;
+    sellPrice: number | null;
+    pnlYen: number | null;
+    pnlPct: number | null;
+    createdAt: number;
+    name: string | null;
+  }>;
+
+  const open = rows.filter((r) => r.sellDate == null);
+  const closed = rows.filter((r) => r.sellDate != null);
+
+  const latestClosesByCode = new Map<string, { date: number; close: number }>();
+  for (const code of new Set(open.map((o) => o.code))) {
+    const latest = await getLatestClose(db, code);
+    if (latest) latestClosesByCode.set(code, latest);
+  }
+
+  const openEnriched = open.map((o) => {
+    const latest = latestClosesByCode.get(o.code);
+    const currentPrice = latest?.close ?? o.buyPrice;
+    const currentValue = currentPrice * o.shares;
+    const unrealizedYen = currentValue - o.investmentYen;
+    const unrealizedPct = ((currentPrice - o.buyPrice) / o.buyPrice) * 100;
+    return {
+      ...o,
+      currentPrice,
+      currentDate: latest?.date ?? null,
+      currentValue,
+      unrealizedYen,
+      unrealizedPct,
+    };
+  });
+
+  const cashSpent = rows.reduce((s, r) => s + r.investmentYen, 0);
+  const cashRecovered = closed.reduce((s, r) => s + (r.sellPrice ?? 0) * r.shares, 0);
+  const cash = PORTFOLIO_START_CAPITAL - cashSpent + cashRecovered;
+  const holdingsValue = openEnriched.reduce((s, o) => s + o.currentValue, 0);
+  const equity = cash + holdingsValue;
+  const realizedPnl = closed.reduce((s, c) => s + (c.pnlYen ?? 0), 0);
+  const unrealizedPnl = openEnriched.reduce((s, o) => s + o.unrealizedYen, 0);
+  const totalPnl = realizedPnl + unrealizedPnl;
+  const returnPct = ((equity - PORTFOLIO_START_CAPITAL) / PORTFOLIO_START_CAPITAL) * 100;
+
+  return c.json({
+    startCapital: PORTFOLIO_START_CAPITAL,
+    cash: Math.round(cash),
+    holdingsValue: Math.round(holdingsValue),
+    equity: Math.round(equity),
+    realizedPnl: Math.round(realizedPnl),
+    unrealizedPnl: Math.round(unrealizedPnl),
+    totalPnl: Math.round(totalPnl),
+    returnPct: Number(returnPct.toFixed(2)),
+    open: openEnriched,
+    closed,
+  });
+});
+
+app.post("/api/portfolio/buy", async (c) => {
+  const db = drizzle(c.env.DB);
+  const body = (await c.req.json()) as {
+    code: string;
+    signalDate: number;
+    buyPrice: number;
+    shares: number;
+  };
+  if (!body.code || !body.signalDate || !body.buyPrice || !body.shares) {
+    return c.json({ error: "code, signalDate, buyPrice, shares は必須" }, 400);
+  }
+  if (body.shares % 100 !== 0 || body.shares <= 0) {
+    return c.json({ error: "shares は 100 の倍数で指定してください" }, 400);
+  }
+  const investment = body.buyPrice * body.shares;
+
+  const allRows = (await db
+    .select({
+      investmentYen: virtualPortfolioTrades.investmentYen,
+      sellPrice: virtualPortfolioTrades.sellPrice,
+      shares: virtualPortfolioTrades.shares,
+      sellDate: virtualPortfolioTrades.sellDate,
+    })
+    .from(virtualPortfolioTrades)) as Array<{
+    investmentYen: number;
+    sellPrice: number | null;
+    shares: number;
+    sellDate: number | null;
+  }>;
+  const cashSpent = allRows.reduce((s, r) => s + r.investmentYen, 0);
+  const cashRecovered = allRows.reduce(
+    (s, r) => s + (r.sellDate != null ? (r.sellPrice ?? 0) * r.shares : 0),
+    0,
+  );
+  const cash = PORTFOLIO_START_CAPITAL - cashSpent + cashRecovered;
+  if (cash < investment) {
+    return c.json({ error: `資金不足: 残高 ${Math.round(cash)}円 / 必要 ${investment}円` }, 400);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const jstNow = new Date(Date.now() + 9 * 3600 * 1000);
+  const buyYmd =
+    jstNow.getUTCFullYear() * 10000 +
+    (jstNow.getUTCMonth() + 1) * 100 +
+    jstNow.getUTCDate();
+
+  await db.insert(virtualPortfolioTrades).values({
+    code: body.code,
+    signalDate: body.signalDate,
+    buyDate: buyYmd,
+    buyPrice: body.buyPrice,
+    shares: body.shares,
+    investmentYen: investment,
+    sellDate: null,
+    sellPrice: null,
+    pnlYen: null,
+    pnlPct: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return c.json({ success: true });
+});
+
+app.post("/api/portfolio/sell", async (c) => {
+  const db = drizzle(c.env.DB);
+  const body = (await c.req.json()) as { id: number };
+  if (!body.id) return c.json({ error: "id は必須" }, 400);
+
+  const [row] = await db
+    .select()
+    .from(virtualPortfolioTrades)
+    .where(eq(virtualPortfolioTrades.id, body.id))
+    .limit(1);
+  if (!row) return c.json({ error: "trade not found" }, 404);
+  if (row.sellDate != null) return c.json({ error: "既に売却済み" }, 400);
+
+  const latest = await getLatestClose(db, row.code);
+  if (!latest) return c.json({ error: `${row.code} の最新価格が取得できません` }, 400);
+  const sellPrice = latest.close;
+  const sellValue = sellPrice * row.shares;
+  const pnlYen = sellValue - row.investmentYen;
+  const pnlPct = ((sellPrice - row.buyPrice) / row.buyPrice) * 100;
+
+  const now = Math.floor(Date.now() / 1000);
+  const jstNow = new Date(Date.now() + 9 * 3600 * 1000);
+  const sellYmd =
+    jstNow.getUTCFullYear() * 10000 +
+    (jstNow.getUTCMonth() + 1) * 100 +
+    jstNow.getUTCDate();
+
+  await db
+    .update(virtualPortfolioTrades)
+    .set({
+      sellDate: sellYmd,
+      sellPrice,
+      pnlYen,
+      pnlPct,
+      updatedAt: now,
+    })
+    .where(eq(virtualPortfolioTrades.id, body.id));
+
+  return c.json({ success: true, pnlYen: Math.round(pnlYen), pnlPct: Number(pnlPct.toFixed(2)) });
 });
 
 const dispatchDailyFxSignal = async (token: string): Promise<void> => {
