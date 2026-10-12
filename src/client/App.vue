@@ -691,7 +691,7 @@ onMounted(async () => {
               </td>
               <td>
                 <button class="sell-btn" :disabled="removingWatch[w.id]" @click="removeFromWatch(w.id)">
-                  {{ removingWatch[w.id] ? "..." : "外す" }}
+                  {{ removingWatch[w.id] ? "..." : "削除" }}
                 </button>
               </td>
             </tr>
