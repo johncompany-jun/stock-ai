@@ -191,7 +191,46 @@ app.get("/api/pattern-picks", async (c) => {
     avg30d: number | null;
   }>;
 
-  return c.json({ latestDate, today, agg, history });
+  const monthlyRows = ((await c.env.DB.prepare(
+    `WITH pp AS (
+       SELECT code, run_date, entry_close,
+              CAST(SUBSTR(CAST(run_date AS TEXT), 5, 2) AS INTEGER) AS buy_month
+       FROM pattern_picks WHERE patterns = ?
+     ),
+     with_90 AS (
+       SELECT pp.buy_month, pp.entry_close,
+         (SELECT c.close FROM candles c
+          WHERE c.code = pp.code AND c.date > pp.run_date AND c.close > 0
+          ORDER BY c.date LIMIT 1 OFFSET 89) AS close_90d
+       FROM pp
+     )
+     SELECT buy_month,
+            COUNT(close_90d) AS n,
+            ROUND(100.0 * SUM(CASE WHEN close_90d > entry_close THEN 1 ELSE 0 END) / COUNT(close_90d), 1) AS wr_90d,
+            ROUND(AVG((close_90d - entry_close) / entry_close * 100), 2) AS avg_90d
+     FROM with_90 WHERE close_90d IS NOT NULL
+     GROUP BY buy_month ORDER BY buy_month`,
+  )
+    .bind(strategy)
+    .all()).results) as Array<{
+    buy_month: number;
+    n: number;
+    wr_90d: number;
+    avg_90d: number;
+  }>;
+
+  const currentMonth = new Date(Date.now() + 9 * 3600 * 1000).getUTCMonth() + 1;
+  const currentMonthStat = monthlyRows.find((r) => r.buy_month === currentMonth) ?? null;
+
+  return c.json({
+    latestDate,
+    today,
+    agg,
+    history,
+    monthly: monthlyRows,
+    currentMonth,
+    currentMonthStat,
+  });
 });
 
 app.get("/api/stock-trades", async (c) => {

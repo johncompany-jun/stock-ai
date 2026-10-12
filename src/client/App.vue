@@ -37,10 +37,19 @@ type PatternHistoryRow = {
   avg15d: number | null;
   avg30d: number | null;
 };
+type MonthlyStat = {
+  buy_month: number;
+  n: number;
+  wr_90d: number;
+  avg_90d: number;
+};
 const patternToday = ref<PatternPick[]>([]);
 const patternAgg = ref<PatternAgg | null>(null);
 const patternHistory = ref<PatternHistoryRow[]>([]);
 const patternLatestDate = ref<number | null>(null);
+const patternMonthly = ref<MonthlyStat[]>([]);
+const patternCurrentMonth = ref<number>(0);
+const patternCurrentMonthStat = ref<MonthlyStat | null>(null);
 const patternLoading = ref(false);
 
 const fetchPatternPicks = async () => {
@@ -53,15 +62,39 @@ const fetchPatternPicks = async () => {
       today: PatternPick[];
       agg: PatternAgg;
       history: PatternHistoryRow[];
+      monthly: MonthlyStat[];
+      currentMonth: number;
+      currentMonthStat: MonthlyStat | null;
     };
     patternToday.value = j.today;
     patternAgg.value = j.agg;
     patternHistory.value = j.history;
     patternLatestDate.value = j.latestDate;
+    patternMonthly.value = j.monthly;
+    patternCurrentMonth.value = j.currentMonth;
+    patternCurrentMonthStat.value = j.currentMonthStat;
   } finally {
     patternLoading.value = false;
   }
 };
+
+const monthRank = computed(() => {
+  const sorted = [...patternMonthly.value].sort((a, b) => b.avg_90d - a.avg_90d);
+  return {
+    best: sorted.slice(0, 3),
+    worst: sorted.slice(-3).reverse(),
+  };
+});
+const currentMonthVerdict = computed(() => {
+  const s = patternCurrentMonthStat.value;
+  if (!s) return { label: "データなし", tone: "neutral" };
+  const avg = s.avg_90d;
+  if (avg >= 5) return { label: "★★★ 絶好の種まき月", tone: "pos-strong" };
+  if (avg >= 3) return { label: "★★ 良い種まき月", tone: "pos" };
+  if (avg >= 1) return { label: "★ 普通の月", tone: "neutral-pos" };
+  if (avg >= 0) return { label: "△ 弱め、様子見推奨", tone: "neutral-neg" };
+  return { label: "✗ 休耕月、見送り推奨", tone: "neg" };
+});
 
 const fmtYmd = (ymd: number | null): string => {
   if (!ymd) return "";
@@ -70,6 +103,38 @@ const fmtYmd = (ymd: number | null): string => {
 };
 const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 const fmtYen = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n).toLocaleString()}円`;
+
+const ymdToDate = (ymd: number): Date => {
+  const y = Math.floor(ymd / 10000);
+  const m = Math.floor((ymd / 100) % 100);
+  const d = ymd % 100;
+  return new Date(y, m - 1, d);
+};
+const dateToYmdString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+const nextBusinessDay = (ymd: number): string => {
+  const d = ymdToDate(ymd);
+  do {
+    d.setDate(d.getDate() + 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  return dateToYmdString(d);
+};
+const addBusinessDays = (startYmd: number, days: number): string => {
+  const d = ymdToDate(startYmd);
+  do {
+    d.setDate(d.getDate() + 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  let count = 1;
+  while (count < days) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+  }
+  return dateToYmdString(d);
+};
 
 const patternCumulative = computed(() => {
   const h = patternHistory.value;
@@ -250,6 +315,31 @@ onMounted(async () => {
         <h2>本日のパターン候補 Top 5</h2>
         <span v-if="patternLatestDate" class="pattern-meta">{{ fmtYmd(patternLatestDate) }}</span>
       </header>
+
+      <div v-if="patternCurrentMonthStat" class="season-banner" :class="currentMonthVerdict.tone">
+        <div class="season-title">
+          <strong>{{ patternCurrentMonth }}月の種まき判定: {{ currentMonthVerdict.label }}</strong>
+        </div>
+        <div class="season-stats">
+          過去 {{ patternCurrentMonthStat.n }}件、90日保有の勝率
+          <strong>{{ patternCurrentMonthStat.wr_90d }}%</strong> / 平均
+          <strong>{{ patternCurrentMonthStat.avg_90d > 0 ? "+" : "" }}{{ patternCurrentMonthStat.avg_90d }}%</strong>
+        </div>
+        <div class="season-rank">
+          <span class="season-rank-group">
+            <span class="season-rank-label pos">強い月</span>
+            <span v-for="m in monthRank.best" :key="'b' + m.buy_month" class="season-rank-item">
+              {{ m.buy_month }}月({{ m.avg_90d > 0 ? "+" : "" }}{{ m.avg_90d }}%)
+            </span>
+          </span>
+          <span class="season-rank-group">
+            <span class="season-rank-label neg">弱い月</span>
+            <span v-for="m in monthRank.worst" :key="'w' + m.buy_month" class="season-rank-item">
+              {{ m.buy_month }}月({{ m.avg_90d > 0 ? "+" : "" }}{{ m.avg_90d }}%)
+            </span>
+          </span>
+        </div>
+      </div>
       <div v-if="patternLoading" class="pattern-msg">読み込み中...</div>
       <div v-else-if="!patternToday.length" class="pattern-msg">本日は候補なし（マッチゼロ）</div>
       <table v-else class="pattern-table">
@@ -258,9 +348,8 @@ onMounted(async () => {
             <th>コード</th>
             <th>銘柄名</th>
             <th class="num">エントリー</th>
-            <th>パターン</th>
-            <th class="num" title="過去同一パターンの30日後平均リターン">30d平均</th>
-            <th class="num" title="過去同一パターンの30日勝率 (n=サンプル数)">30d勝率</th>
+            <th>買付日</th>
+            <th>売却予定日</th>
           </tr>
         </thead>
         <tbody>
@@ -268,62 +357,12 @@ onMounted(async () => {
             <td>{{ p.code }}</td>
             <td>{{ p.name ?? "-" }}</td>
             <td class="num">{{ Math.round(p.entryClose).toLocaleString() }}円</td>
-            <td class="pattern-tags">
-              <span v-for="tag in p.patterns.split(',')" :key="tag" class="pattern-tag">{{ tag }}</span>
-            </td>
-            <td class="num" :class="{ pos: (p.patternAvg30d ?? 0) > 0, neg: (p.patternAvg30d ?? 0) < 0 }">
-              {{ p.patternAvg30d != null ? fmtPct(p.patternAvg30d) : "-" }}
-            </td>
-            <td class="num">
-              {{ p.patternWr30d != null ? p.patternWr30d.toFixed(1) + "%" : "-" }}
-              <span class="pattern-n">n={{ p.patternN }}</span>
-            </td>
+            <td>{{ nextBusinessDay(p.runDate) }}</td>
+            <td>{{ addBusinessDays(p.runDate, 90) }} <span class="pattern-n">(90取引日後)</span></td>
           </tr>
         </tbody>
       </table>
 
-      <div v-if="patternAgg" class="pattern-agg">
-        <h3>過去実績
-          <span class="pattern-meta" v-if="patternAgg.firstDate && patternAgg.lastDate">
-            {{ fmtYmd(patternAgg.firstDate) }} 〜 {{ fmtYmd(patternAgg.lastDate) }} / {{ patternAgg.n.toLocaleString() }} 件
-          </span>
-        </h3>
-        <table class="pattern-stats-table">
-          <thead>
-            <tr>
-              <th>保有期間</th>
-              <th class="num">サンプル</th>
-              <th class="num">勝率</th>
-              <th class="num">平均リターン</th>
-              <th class="num">累積（複利）</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>15日</td>
-              <td class="num">{{ patternAgg.n15d.toLocaleString() }}</td>
-              <td class="num">{{ patternAgg.wr15d != null ? patternAgg.wr15d.toFixed(2) + "%" : "-" }}</td>
-              <td class="num" :class="{ pos: (patternAgg.avg15d ?? 0) > 0, neg: (patternAgg.avg15d ?? 0) < 0 }">
-                {{ patternAgg.avg15d != null ? fmtPct(patternAgg.avg15d) : "-" }}
-              </td>
-              <td class="num" :class="{ pos: (patternCumulative.avg15d ?? 0) > 0, neg: (patternCumulative.avg15d ?? 0) < 0 }">
-                {{ patternCumulative.avg15d != null ? fmtPct(patternCumulative.avg15d) : "-" }}
-              </td>
-            </tr>
-            <tr>
-              <td>30日</td>
-              <td class="num">{{ patternAgg.n30d.toLocaleString() }}</td>
-              <td class="num">{{ patternAgg.wr30d != null ? patternAgg.wr30d.toFixed(2) + "%" : "-" }}</td>
-              <td class="num" :class="{ pos: (patternAgg.avg30d ?? 0) > 0, neg: (patternAgg.avg30d ?? 0) < 0 }">
-                {{ patternAgg.avg30d != null ? fmtPct(patternAgg.avg30d) : "-" }}
-              </td>
-              <td class="num" :class="{ pos: (patternCumulative.avg30d ?? 0) > 0, neg: (patternCumulative.avg30d ?? 0) < 0 }">
-                {{ patternCumulative.avg30d != null ? fmtPct(patternCumulative.avg30d) : "-" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </section>
 
     <section v-else-if="currentView === 'stock-portfolio'" class="pattern-panel">
@@ -768,5 +807,69 @@ main {
 .highlight-label.neg {
   background: #fee2e2;
   color: #991b1b;
+}
+.season-banner {
+  margin: 0.4rem 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+.season-banner.pos-strong {
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+.season-banner.pos {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+.season-banner.neutral-pos,
+.season-banner.neutral-neg {
+  background: #fefce8;
+  border-color: #fde68a;
+}
+.season-banner.neg {
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+.season-title strong {
+  font-size: 0.95rem;
+}
+.season-stats {
+  color: #333;
+}
+.season-rank {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: #555;
+}
+.season-rank-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.season-rank-label {
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 0.7rem;
+}
+.season-rank-label.pos {
+  background: #d1fae5;
+  color: #065f46;
+}
+.season-rank-label.neg {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.season-rank-item {
+  color: #444;
 }
 </style>
