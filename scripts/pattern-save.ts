@@ -20,7 +20,7 @@ const PATTERNS: Record<string, Pattern> = {
 
 const { values } = parseArgs({
   options: {
-    patterns: { type: "string", default: "oversold_reversal,pullback_to_ma,gap_down_reversal,range_oscillator_buy" },
+    patterns: { type: "string", default: "range_oscillator_buy" },
     markets: { type: "string", default: "東S,東G,東P" },
     minPrice: { type: "string", default: "100" },
     maxPrice: { type: "string", default: "1000" },

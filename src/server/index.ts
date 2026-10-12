@@ -80,10 +80,12 @@ app.get("/api/backtest-candidates", async (c) => {
 app.get("/api/pattern-picks", async (c) => {
   const db = drizzle(c.env.DB);
   const limit = Math.min(Number(c.req.query("limit") ?? "500"), 2000);
+  const strategy = c.req.query("strategy") ?? "range_oscillator_buy";
 
   const latestDateRow = await db
     .select({ d: sql<number>`MAX(${patternPicks.runDate})` })
-    .from(patternPicks);
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy));
   const latestDate = latestDateRow[0]?.d ?? null;
 
   const perPatternRows = (await db
@@ -94,6 +96,7 @@ app.get("/api/pattern-picks", async (c) => {
       avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
     })
     .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))
     .groupBy(patternPicks.patterns)) as Array<{
     patterns: string;
     n: number;
@@ -113,7 +116,7 @@ app.get("/api/pattern-picks", async (c) => {
         })
         .from(patternPicks)
         .leftJoin(stocks, eq(stocks.code, patternPicks.code))
-        .where(eq(patternPicks.runDate, latestDate))
+        .where(and(eq(patternPicks.runDate, latestDate), eq(patternPicks.patterns, strategy)))
     : [];
 
   const scoreOf = (
@@ -165,7 +168,8 @@ app.get("/api/pattern-picks", async (c) => {
       firstDate: sql<number>`MIN(${patternPicks.runDate})`,
       lastDate: sql<number>`MAX(${patternPicks.runDate})`,
     })
-    .from(patternPicks);
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy));
 
   const history = (await db
     .select({
@@ -176,6 +180,7 @@ app.get("/api/pattern-picks", async (c) => {
       avg30d: sql<number>`AVG(${patternPicks.return30dPct})`,
     })
     .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))
     .groupBy(patternPicks.runDate)
     .orderBy(asc(patternPicks.runDate))
     .limit(limit)) as Array<{
