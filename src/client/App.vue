@@ -905,7 +905,7 @@ onMounted(async () => {
         </span>
       </header>
       <div class="virtual-badge">
-        🧪 仮想50万円での紙上検証です。実取引は行っていません。
+        🧪 仮想50万円での検証です。実取引は行っていません。
       </div>
 
       <div v-if="fxLoading" class="pattern-msg">読み込み中...</div>

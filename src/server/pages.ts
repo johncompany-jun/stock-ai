@@ -5,11 +5,11 @@ const SUPPORT_MAIL = "johncompany2000jp@gmail.com";
 export const renderAbout = (): string =>
   renderLayout({
     title: "このサイトについて — stock-ai",
-    description: "stock-ai は AI による相場予測の検証記録を公開する個人サイトです。仮想50万円での紙上検証で、売買を勧めるものではありません。",
+    description: "stock-ai は AI による相場予測の検証記録を公開する個人サイトです。仮想50万円での検証で、売買を勧めるものではありません。",
     path: "/about",
     content: `
     <h1>このサイトについて</h1>
-    <div class="notice">本サイトは仮想50万円での紙上検証です。実売買の推奨ではありません。</div>
+    <div class="notice">本サイトは仮想50万円での検証です。実売買の推奨ではありません。</div>
 
     <h2>運営</h2>
     <p>個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が運営する個人サイトです。build in public で開発過程を X に投稿しています。</p>
@@ -20,7 +20,7 @@ export const renderAbout = (): string =>
     <h2>検証の内容</h2>
     <ul>
       <li><strong>株</strong>: レンジサイクル戦略 (3M安値で種まき/3M高値で収穫) に合致した銘柄を日次でピック。仮想50万円での検証ポートフォリオを公開。</li>
-      <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。TP +30 / SL -20 pips の非対称 R:R で紙上検証。</li>
+      <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。TP +30 / SL -20 pips の非対称 R:R で検証。</li>
     </ul>
 
     <h2>データの出典</h2>
@@ -62,7 +62,7 @@ export const renderDisclaimer = (): string =>
     <p>運営者は金融商品取引業の登録を受けていません。本サイトは一切の投資助言サービスを提供しません。</p>
 
     <h2>3. 検証について</h2>
-    <p>サイト内の「ポートフォリオ」および「FX」に表示される損益・成績は、すべて<strong>仮想50万円を使った紙上検証</strong>によるものであり、実際の売買を行った結果ではありません。</p>
+    <p>サイト内の「ポートフォリオ」および「FX」に表示される損益・成績は、すべて<strong>仮想50万円を使った検証</strong>によるものであり、実際の売買を行った結果ではありません。</p>
 
     <h2>4. 情報の正確性・完全性</h2>
     <p>情報の正確性・完全性・有用性について、運営者は一切の保証を行いません。元データ提供元の仕様変更やバグ、通信障害等により情報が欠落・遅延することがあります。</p>
