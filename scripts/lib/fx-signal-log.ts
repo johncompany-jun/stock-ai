@@ -29,6 +29,15 @@ export type Outcome = {
   actualSlHitMin: number | null;
 };
 
+// 新 outcome 形式 (direction ごとに別 TP/SL hit を保持)
+export type OutcomeAll = {
+  label995Pips: number | null;
+  longTpHitMin: number | null;
+  longSlHitMin: number | null;
+  shortTpHitMin: number | null;
+  shortSlHitMin: number | null;
+};
+
 export type PredictionStore = {
   savePrediction: (p: Omit<SavedPrediction, "updatedAt">) => Promise<void>;
   getPrediction: (pair: string, date: string) => Promise<SavedPrediction | null>;
@@ -43,6 +52,40 @@ export type PredictionStore = {
   ) => Promise<void>;
 };
 
+// 方向と direction-specific な TP/SL hit から pnl を決める
+export const computePnlForDirection = (
+  direction: "LONG" | "SHORT",
+  outcome: OutcomeAll,
+  longTpPips: number,
+  shortTpPips: number,
+  slPips: number,
+): {
+  pnlPips: number | null;
+  hit: number | null;
+  tpHitMin: number | null;
+  slHitMin: number | null;
+} => {
+  const { label995Pips } = outcome;
+  if (label995Pips === null)
+    return { pnlPips: null, hit: null, tpHitMin: null, slHitMin: null };
+  const tp = direction === "LONG" ? outcome.longTpHitMin : outcome.shortTpHitMin;
+  const sl = direction === "LONG" ? outcome.longSlHitMin : outcome.shortSlHitMin;
+  const tpWin = direction === "LONG" ? longTpPips : shortTpPips;
+  let pnl: number;
+  if (tp === null && sl === null) {
+    // 無決着 → 11:00 時点のラベルで評価 (LONGはそのまま、SHORTは符号反転)
+    pnl = direction === "LONG" ? label995Pips : -label995Pips;
+  } else if (tp !== null && sl === null) {
+    pnl = tpWin;
+  } else if (sl !== null && tp === null) {
+    pnl = -slPips;
+  } else {
+    pnl = (tp as number) < (sl as number) ? tpWin : -slPips;
+  }
+  return { pnlPips: pnl, hit: pnl > 0 ? 1 : 0, tpHitMin: tp, slHitMin: sl };
+};
+
+// 旧 API: 保持 (fx-features-report などが使用)
 export const computePnl = (
   direction: "LONG" | "SHORT",
   outcome: Outcome,

@@ -259,15 +259,17 @@ export const computeFeatures = async (
 export type Outcome = {
   entryPrice: number;
   label995Pips: number | null;
-  tpHitMin: number | null;
-  slHitMin: number | null;
+  longTpHitMin: number | null;
+  longSlHitMin: number | null;
+  shortTpHitMin: number | null;
+  shortSlHitMin: number | null;
 };
 
 export const computeOutcome = async (
   source: CandleSource,
   pair: string,
   date: string,
-  opts: { tpPips: number; slPips: number },
+  opts: { longTpPips: number; shortTpPips: number; slPips: number },
 ): Promise<Outcome | null> => {
   const [y, m1, d] = jstDateStrParts(date);
   const entryTs = jstDateToEntryUtcSec(y, m1, d);
@@ -285,19 +287,39 @@ export const computeOutcome = async (
   const exitBar = byTs.get(entryTs + 120 * 60);
   const label995Pips = exitBar ? (exitBar.c - entryPrice) * 100 : null;
 
-  const tpPrice = entryPrice + opts.tpPips / 100;
-  const slPrice = entryPrice - opts.slPips / 100;
-  let tpHitMin: number | null = null;
-  let slHitMin: number | null = null;
+  const longTpPrice = entryPrice + opts.longTpPips / 100;
+  const longSlPrice = entryPrice - opts.slPips / 100;
+  const shortTpPrice = entryPrice - opts.shortTpPips / 100;
+  const shortSlPrice = entryPrice + opts.slPips / 100;
+
+  let longTpHitMin: number | null = null;
+  let longSlHitMin: number | null = null;
+  let shortTpHitMin: number | null = null;
+  let shortSlHitMin: number | null = null;
   for (let off = 0; off <= 120; off++) {
     const bar = byTs.get(entryTs + off * 60);
     if (!bar) continue;
-    if (tpHitMin === null && bar.h >= tpPrice) tpHitMin = off;
-    if (slHitMin === null && bar.l <= slPrice) slHitMin = off;
-    if (tpHitMin !== null && slHitMin !== null) break;
+    if (longTpHitMin === null && bar.h >= longTpPrice) longTpHitMin = off;
+    if (longSlHitMin === null && bar.l <= longSlPrice) longSlHitMin = off;
+    if (shortTpHitMin === null && bar.l <= shortTpPrice) shortTpHitMin = off;
+    if (shortSlHitMin === null && bar.h >= shortSlPrice) shortSlHitMin = off;
+    if (
+      longTpHitMin !== null &&
+      longSlHitMin !== null &&
+      shortTpHitMin !== null &&
+      shortSlHitMin !== null
+    )
+      break;
   }
 
-  return { entryPrice, label995Pips, tpHitMin, slHitMin };
+  return {
+    entryPrice,
+    label995Pips,
+    longTpHitMin,
+    longSlHitMin,
+    shortTpHitMin,
+    shortSlHitMin,
+  };
 };
 
 export const featurize = (

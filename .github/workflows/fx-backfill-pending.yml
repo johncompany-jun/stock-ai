@@ -36,4 +36,7 @@ jobs:
           --remote
 
       - name: Backfill pending FX predictions
-        run: bun run scripts/fx-backfill-pending.ts --pair USDJPY --remote
+        run: >
+          bun run scripts/fx-backfill-pending.ts
+          --pair USDJPY --remote
+          --tpPipsLong 25 --tpPipsShort 30 --slPips 20

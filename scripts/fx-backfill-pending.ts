@@ -7,7 +7,7 @@ import {
   type CandleSource,
 } from "./lib/fx-predict";
 import {
-  computePnl,
+  computePnlForDirection,
   localPredictionStore,
   remotePredictionStore,
   type PredictionStore,
@@ -16,14 +16,16 @@ import {
 const { values } = parseArgs({
   options: {
     pair: { type: "string", default: "USDJPY" },
-    tpPips: { type: "string", default: "30" },
+    tpPipsLong: { type: "string", default: "25" },
+    tpPipsShort: { type: "string", default: "30" },
     slPips: { type: "string", default: "20" },
     remote: { type: "boolean", default: false },
   },
 });
 
 const PAIR = values.pair!.toUpperCase();
-const TP_PIPS = Number(values.tpPips);
+const TP_PIPS_LONG = Number(values.tpPipsLong);
+const TP_PIPS_SHORT = Number(values.tpPipsShort);
 const SL_PIPS = Number(values.slPips);
 
 const buildSource = (): CandleSource => {
@@ -64,7 +66,8 @@ const main = async () => {
   let skipped = 0;
   for (const p of pending) {
     const outcome = await computeOutcome(source, PAIR, p.date, {
-      tpPips: TP_PIPS,
+      longTpPips: TP_PIPS_LONG,
+      shortTpPips: TP_PIPS_SHORT,
       slPips: SL_PIPS,
     });
     if (!outcome) {
@@ -72,20 +75,17 @@ const main = async () => {
       skipped++;
       continue;
     }
-    const pnl = computePnl(
+    const pnl = computePnlForDirection(
       p.direction,
-      {
-        actualLabelPips: outcome.label995Pips,
-        actualTpHitMin: outcome.tpHitMin,
-        actualSlHitMin: outcome.slHitMin,
-      },
-      TP_PIPS,
+      outcome,
+      TP_PIPS_LONG,
+      TP_PIPS_SHORT,
       SL_PIPS,
     );
     await store.updateOutcome(PAIR, p.date, {
       actualLabelPips: outcome.label995Pips,
-      actualTpHitMin: outcome.tpHitMin,
-      actualSlHitMin: outcome.slHitMin,
+      actualTpHitMin: pnl.tpHitMin,
+      actualSlHitMin: pnl.slHitMin,
       pnlPips: pnl.pnlPips,
       hit: pnl.hit,
     });

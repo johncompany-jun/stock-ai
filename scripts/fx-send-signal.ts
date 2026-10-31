@@ -14,7 +14,7 @@ import {
   type PredictResult,
 } from "./lib/fx-predict";
 import {
-  computePnl,
+  computePnlForDirection,
   localPredictionStore,
   remotePredictionStore,
   type PredictionStore,
@@ -27,7 +27,8 @@ const { values } = parseArgs({
     date: { type: "string" },
     k: { type: "string", default: "10" },
     modelDir: { type: "string", default: "data/fx/model" },
-    tpPips: { type: "string", default: "30" },
+    tpPipsLong: { type: "string", default: "25" },
+    tpPipsShort: { type: "string", default: "30" },
     slPips: { type: "string", default: "20" },
     to: { type: "string" },
     remote: { type: "boolean", default: false },
@@ -38,7 +39,8 @@ const { values } = parseArgs({
 
 const PAIR = values.pair.toUpperCase();
 const K = Number(values.k);
-const TP_PIPS = Number(values.tpPips);
+const TP_PIPS_LONG = Number(values.tpPipsLong);
+const TP_PIPS_SHORT = Number(values.tpPipsShort);
 const SL_PIPS = Number(values.slPips);
 const MODEL_DIR = resolve(process.cwd(), values.modelDir);
 const TO = (values.to ?? process.env.NOTIFICATION_EMAIL ?? "")
@@ -91,7 +93,8 @@ const buildYesterdayReport = async (
   const saved = await store.getPrediction(pair, yDate);
   if (!saved) return null;
   const outcome = await computeOutcome(source, pair, yDate, {
-    tpPips: TP_PIPS,
+    longTpPips: TP_PIPS_LONG,
+    shortTpPips: TP_PIPS_SHORT,
     slPips: SL_PIPS,
   });
   if (!outcome) {
@@ -109,21 +112,18 @@ const buildYesterdayReport = async (
       knnShortPct: (saved.shortWins / saved.k) * 100,
     };
   }
-  const pnl = computePnl(
+  const pnl = computePnlForDirection(
     saved.direction,
-    {
-      actualLabelPips: outcome.label995Pips,
-      actualTpHitMin: outcome.tpHitMin,
-      actualSlHitMin: outcome.slHitMin,
-    },
-    TP_PIPS,
+    outcome,
+    TP_PIPS_LONG,
+    TP_PIPS_SHORT,
     SL_PIPS,
   );
   if (!values.skipLog && !values.dryRun) {
     await store.updateOutcome(pair, yDate, {
       actualLabelPips: outcome.label995Pips,
-      actualTpHitMin: outcome.tpHitMin,
-      actualSlHitMin: outcome.slHitMin,
+      actualTpHitMin: pnl.tpHitMin,
+      actualSlHitMin: pnl.slHitMin,
       pnlPips: pnl.pnlPips,
       hit: pnl.hit,
     });
@@ -134,8 +134,8 @@ const buildYesterdayReport = async (
     probability: saved.probability,
     entryPrice: saved.entryPrice,
     actualLabelPips: outcome.label995Pips,
-    actualTpHitMin: outcome.tpHitMin,
-    actualSlHitMin: outcome.slHitMin,
+    actualTpHitMin: pnl.tpHitMin,
+    actualSlHitMin: pnl.slHitMin,
     pnlPips: pnl.pnlPips,
     hit: pnl.hit,
     knnLongPct: (saved.longWins / saved.k) * 100,
@@ -219,7 +219,9 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   lines.push("");
   lines.push("当ツールの検証ルール:");
   lines.push("  ・検証では 9:05 JST (= 00:05 UTC) の価格でエントリーしたものとして記録");
-  lines.push(`  ・検証ルール: TP +${TP_PIPS} pips / SL -${SL_PIPS} pips`);
+  lines.push(
+    `  ・検証ルール: TP LONG +${TP_PIPS_LONG} / SHORT +${TP_PIPS_SHORT} pips, SL -${SL_PIPS} pips`,
+  );
   lines.push("  ・検証では 11:00 JST までに同値決済として記録");
   lines.push("");
   lines.push("本メールは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。");
@@ -330,7 +332,7 @@ ${yesterdayBlock}
   <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">当ツールの検証ルール</h3>
   <ul style="margin:0 0 20px 0;padding-left:20px;font-size:13px;color:#374151;line-height:1.7;">
     <li>検証では <strong>9:05 JST (= 00:05 UTC)</strong> の価格でエントリーしたものとして記録</li>
-    <li>検証ルール: <strong>TP +${TP_PIPS} pips / SL -${SL_PIPS} pips</strong></li>
+    <li>検証ルール: <strong>TP LONG +${TP_PIPS_LONG} / SHORT +${TP_PIPS_SHORT} pips, SL -${SL_PIPS} pips</strong></li>
     <li>検証では <strong>11:00 JST</strong> までに同値決済として記録</li>
   </ul>
 
@@ -393,25 +395,23 @@ const main = async () => {
     for (const p of pending) {
       if (p.date === prevBusinessDay(date)) continue;
       const outcome = await computeOutcome(source, PAIR, p.date, {
-        tpPips: TP_PIPS,
+        longTpPips: TP_PIPS_LONG,
+        shortTpPips: TP_PIPS_SHORT,
         slPips: SL_PIPS,
       });
       if (!outcome) continue;
-      const pnl = computePnl(
+      const pnl = computePnlForDirection(
         p.direction,
-        {
-          actualLabelPips: outcome.label995Pips,
-          actualTpHitMin: outcome.tpHitMin,
-          actualSlHitMin: outcome.slHitMin,
-        },
-        TP_PIPS,
+        outcome,
+        TP_PIPS_LONG,
+        TP_PIPS_SHORT,
         SL_PIPS,
       );
       if (!values.skipLog && !values.dryRun) {
         await store.updateOutcome(PAIR, p.date, {
           actualLabelPips: outcome.label995Pips,
-          actualTpHitMin: outcome.tpHitMin,
-          actualSlHitMin: outcome.slHitMin,
+          actualTpHitMin: pnl.tpHitMin,
+          actualSlHitMin: pnl.slHitMin,
           pnlPips: pnl.pnlPips,
           hit: pnl.hit,
         });
