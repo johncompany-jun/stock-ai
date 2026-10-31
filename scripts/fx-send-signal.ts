@@ -70,7 +70,7 @@ const prevBusinessDay = (date: string): string => {
 type YesterdayReport = {
   date: string;
   direction: "LONG" | "SHORT";
-  confidence: number;
+  probability: number;
   entryPrice: number;
   actualLabelPips: number | null;
   actualTpHitMin: number | null;
@@ -98,7 +98,7 @@ const buildYesterdayReport = async (
     return {
       date: yDate,
       direction: saved.direction,
-      confidence: saved.confidence,
+      probability: saved.probability,
       entryPrice: saved.entryPrice,
       actualLabelPips: saved.actualLabelPips,
       actualTpHitMin: saved.actualTpHitMin,
@@ -131,7 +131,7 @@ const buildYesterdayReport = async (
   return {
     date: yDate,
     direction: saved.direction,
-    confidence: saved.confidence,
+    probability: saved.probability,
     entryPrice: saved.entryPrice,
     actualLabelPips: outcome.label995Pips,
     actualTpHitMin: outcome.tpHitMin,
@@ -159,12 +159,12 @@ const describeOutcome = (y: YesterdayReport): string => {
 const buildSubject = (r: PredictResult, y: YesterdayReport | null): string => {
   const [y1, m1, d] = jstDateStrParts(r.date);
   const dow = dowLabel(dowFromJst(y1, m1, d));
-  const conf = (r.confidence * 100).toFixed(0);
+  const upPct = (r.probability * 100).toFixed(0);
   const suffix =
     y && y.pnlPips !== null
       ? ` [前日 ${y.hit ? "◯" : "✕"} ${sign(y.pnlPips, "p")}]`
       : "";
-  return `【FX】${r.date} (${dow}) ${r.pair}: ${r.direction} (${conf}%)${suffix}`;
+  return `【FX検証】${r.date} (${dow}) ${r.pair}: ${r.direction} (UP ${upPct}%)${suffix}`;
 };
 
 const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
@@ -172,29 +172,30 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   const [y1, m1, d] = jstDateStrParts(r.date);
   const dow = dowLabel(dowFromJst(y1, m1, d));
   const lines: string[] = [];
-  lines.push(`FX シグナル [${r.pair}]  ${r.date} (${dow})  配信9:05 / エントリー9:00〜 JST`);
+  lines.push(`FX 検証ログ [${r.pair}]  ${r.date} (${dow})`);
+  lines.push("本メールは過去データにもとづく検証記録の共有です。売買を勧めるものではありません。");
   lines.push("");
   if (y) {
     const [yy, ym, yd] = jstDateStrParts(y.date);
     const ydow = dowLabel(dowFromJst(yy, ym, yd));
-    lines.push(`━━ 昨日の答え合わせ (${y.date} ${ydow}) ━━`);
+    lines.push(`━━ 昨日の検証結果 (${y.date} ${ydow}) ━━`);
     lines.push(
-      `  予測: ${y.direction} (${(y.confidence * 100).toFixed(0)}%)  エントリー ${y.entryPrice.toFixed(3)}`,
+      `  モデル予測: ${y.direction} (UP確率 ${(y.probability * 100).toFixed(0)}%)  参考価格 ${y.entryPrice.toFixed(3)}`,
     );
     if (y.pnlPips !== null) {
       lines.push(
-        `  結果: ${y.hit ? "◯ 勝ち" : "✕ 負け"} ${sign(y.pnlPips, "p")}  (${describeOutcome(y)})`,
+        `  検証結果: ${y.hit ? "◯ 勝ち" : "✕ 負け"} ${sign(y.pnlPips, "p")}  (${describeOutcome(y)})`,
       );
     } else {
-      lines.push(`  結果: ${describeOutcome(y)}`);
+      lines.push(`  検証結果: ${describeOutcome(y)}`);
     }
     lines.push(
       `  参考 kNN: LONG ${y.knnLongPct.toFixed(0)}%  SHORT ${y.knnShortPct.toFixed(0)}%`,
     );
     lines.push("");
   }
-  lines.push(`推奨: ${r.direction}  (確信度 ${(r.confidence * 100).toFixed(1)}%)`);
-  lines.push(`エントリー参考価格: ${f.entry_price.toFixed(3)}`);
+  lines.push(`モデル予測: ${r.direction}  (UP確率 ${(r.probability * 100).toFixed(1)}%)`);
+  lines.push(`参考価格 (9:00 JST = 00:00 UTC): ${f.entry_price.toFixed(3)}`);
   lines.push("");
   lines.push("今朝の状況:");
   lines.push(`  NY 変化 (前日9:00比):     ${sign(f.ny_delta_pips, "p")}`);
@@ -216,11 +217,16 @@ const buildText = (r: PredictResult, y: YesterdayReport | null): string => {
   lines.push(`  LONG  勝ち ${r.longWins}/${K} (${((r.longWins / K) * 100).toFixed(0)}%)  平均 ${sign(r.avgLong, "p")}`);
   lines.push(`  SHORT 勝ち ${r.shortWins}/${K} (${((r.shortWins / K) * 100).toFixed(0)}%)  平均 ${sign(r.avgShort, "p")}`);
   lines.push("");
-  lines.push("運用メモ:");
-  lines.push("  ・エントリー: 配信直後 (9:05-9:10 JST 目安) に成行");
-  lines.push(`  ・利確/損切目安: +${TP_PIPS} / -${SL_PIPS} pips`);
-  lines.push("  ・タイムカット: 11:00 JST までに手仕舞い");
-  lines.push("  ・最終判断は類似日パターンをご確認ください (執行と決済はご自身で)");
+  lines.push("当ツールの検証ルール:");
+  lines.push("  ・検証では 9:05 JST (= 00:05 UTC) の価格でエントリーしたものとして記録");
+  lines.push(`  ・検証ルール: TP +${TP_PIPS} pips / SL -${SL_PIPS} pips`);
+  lines.push("  ・検証では 11:00 JST までに同値決済として記録");
+  lines.push("");
+  lines.push("本メールは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。");
+  lines.push("投資判断はご自身の責任でお願いします。");
+  lines.push("");
+  lines.push(`配信停止は返信にて: ${process.env.EMAIL_FROM ?? "owner"} まで`);
+  lines.push("詳細: https://stock-ai.uk/about");
   return lines.join("\n");
 };
 
@@ -265,10 +271,10 @@ const buildHtml = (r: PredictResult, y: YesterdayReport | null): string => {
             : `${y.hit ? "◯ 勝ち" : "✕ 負け"}  ${sign(y.pnlPips, "p")}`;
         return `
   <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
-    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">昨日の答え合わせ  ·  ${y.date} (${ydow})</div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">昨日の検証結果  ·  ${y.date} (${ydow})</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
       <div style="font-size:14px;color:#374151;">
-        予測 <strong>${y.direction}</strong> (${(y.confidence * 100).toFixed(0)}%)  ·  entry ${y.entryPrice.toFixed(3)}
+        モデル予測 <strong>${y.direction}</strong> (UP ${(y.probability * 100).toFixed(0)}%)  ·  参考 ${y.entryPrice.toFixed(3)}
       </div>
       <div style="font-size:18px;font-weight:700;color:${resultColor};">${resultLabel}</div>
     </div>
@@ -281,12 +287,15 @@ const buildHtml = (r: PredictResult, y: YesterdayReport | null): string => {
 
   return `<!doctype html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;color:#111827;max-width:640px;margin:0 auto;padding:20px;">
-  <h2 style="margin:0 0 4px 0;color:#111827;">FX シグナル ${r.pair}</h2>
-  <p style="margin:0 0 20px 0;color:#6b7280;">${r.date} (${dow}) 配信9:05 / エントリー9:00〜 JST</p>
+  <h2 style="margin:0 0 4px 0;color:#111827;">FX 検証ログ ${r.pair}</h2>
+  <p style="margin:0 0 10px 0;color:#6b7280;">${r.date} (${dow})</p>
+  <p style="margin:0 0 20px 0;color:#78350f;background:#fef3c7;border:1px solid #fde68a;padding:8px 12px;border-radius:6px;font-size:13px;">
+    🧪 本メールは過去データにもとづく検証記録の共有です。売買を勧めるものではありません。
+  </p>
 ${yesterdayBlock}
   <div style="background:${dirColor};color:#fff;padding:16px 20px;border-radius:8px;margin-bottom:20px;">
     <div style="font-size:28px;font-weight:700;">${dirLabel}</div>
-    <div style="font-size:14px;opacity:0.9;margin-top:4px;">確信度 ${(r.confidence * 100).toFixed(1)}%  &nbsp;·&nbsp;  エントリー参考 ${f.entry_price.toFixed(3)}</div>
+    <div style="font-size:14px;opacity:0.9;margin-top:4px;">UP確率 ${(r.probability * 100).toFixed(1)}%  &nbsp;·&nbsp;  参考価格 (9:00 JST) ${f.entry_price.toFixed(3)}</div>
   </div>
 
   <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">今朝の状況</h3>
@@ -318,16 +327,19 @@ ${yesterdayBlock}
     <div><strong>SHORT 勝ち</strong> ${r.shortWins}/${K} (${shortPct}%) &nbsp; 平均 ${sign(r.avgShort, "p")}</div>
   </div>
 
-  <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">運用メモ</h3>
+  <h3 style="margin:0 0 8px 0;font-size:14px;color:#374151;">当ツールの検証ルール</h3>
   <ul style="margin:0 0 20px 0;padding-left:20px;font-size:13px;color:#374151;line-height:1.7;">
-    <li>エントリー: 配信直後 (9:05-9:10 JST 目安) に成行</li>
-    <li>利確/損切目安: <strong>+${TP_PIPS} / -${SL_PIPS} pips</strong></li>
-    <li>タイムカット: <strong>11:00 JST</strong> までに手仕舞い</li>
-    <li>最終判断は上の類似日パターンをご確認ください (執行と決済はご自身で)</li>
+    <li>検証では <strong>9:05 JST (= 00:05 UTC)</strong> の価格でエントリーしたものとして記録</li>
+    <li>検証ルール: <strong>TP +${TP_PIPS} pips / SL -${SL_PIPS} pips</strong></li>
+    <li>検証では <strong>11:00 JST</strong> までに同値決済として記録</li>
   </ul>
 
+  <p style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin:0 0 12px;">
+    本メールは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。投資判断はご自身の責任でお願いします。
+  </p>
   <p style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:12px;margin:0;">
-    stock-ai /fx  ·  ${r.seeds}-seed MLP ensemble  ·  過去3年のデータで学習
+    stock-ai /fx  ·  ${r.seeds}-seed MLP ensemble  ·  過去3年のデータで学習<br/>
+    配信停止は本メールへの返信にて  ·  詳細: <a href="https://stock-ai.uk/about" style="color:#6b7280;">https://stock-ai.uk/about</a>
   </p>
 </body></html>`;
 };
