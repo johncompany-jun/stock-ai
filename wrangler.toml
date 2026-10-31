@@ -10,6 +10,11 @@ custom_domain = true
 directory = "./dist/client"
 not_found_handling = "single-page-application"
 
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
 [[d1_databases]]
 binding = "DB"
 database_name = "stock-ai"

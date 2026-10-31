@@ -2,13 +2,92 @@ import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, watchlist } from "./db/schema";
+import {
+  clearCookie,
+  isAuthenticated,
+  requireOwner,
+  sessionCookie,
+  signSession,
+  timingSafeEqualStr,
+} from "./auth";
+import { renderAbout, renderDisclaimer, renderPrivacy } from "./pages";
+import { listPostMeta, renderBlogIndex, renderBlogPost } from "./blog";
 
 type Bindings = {
   DB: D1Database;
   GITHUB_TOKEN?: string;
+  OWNER_PASSWORD?: string;
+  SESSION_SECRET?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+app.post("/api/auth/login", async (c) => {
+  if (!c.env.OWNER_PASSWORD || !c.env.SESSION_SECRET) {
+    return c.json({ error: "auth not configured" }, 503);
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { password?: string };
+  const supplied = body.password ?? "";
+  const ok = timingSafeEqualStr(supplied, c.env.OWNER_PASSWORD);
+  if (!ok) return c.json({ error: "invalid password" }, 401);
+  const token = await signSession(c.env.SESSION_SECRET);
+  c.header("Set-Cookie", sessionCookie(token));
+  return c.json({ authenticated: true });
+});
+
+app.post("/api/auth/logout", (c) => {
+  c.header("Set-Cookie", clearCookie());
+  return c.json({ authenticated: false });
+});
+
+app.get("/api/auth/me", async (c) => {
+  const ok = await isAuthenticated(c.req.header("cookie"), c.env);
+  return c.json({ authenticated: ok });
+});
+
+const htmlResponse = (body: string, status = 200) =>
+  new Response(body, {
+    status,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+
+app.get("/about", () => htmlResponse(renderAbout()));
+app.get("/disclaimer", () => htmlResponse(renderDisclaimer()));
+app.get("/privacy", () => htmlResponse(renderPrivacy()));
+
+app.get("/blog", (c) => c.redirect("/blog/", 301));
+app.get("/blog/", () => htmlResponse(renderBlogIndex()));
+app.get("/blog/:slug", (c) => {
+  const html = renderBlogPost(c.req.param("slug"));
+  if (!html) return htmlResponse("<h1>404</h1><p>記事が見つかりません。</p>", 404);
+  return htmlResponse(html);
+});
+
+app.get("/robots.txt", () => {
+  const body = `User-agent: *\nAllow: /\nSitemap: https://stock-ai.uk/sitemap.xml\n`;
+  return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8" } });
+});
+
+app.get("/sitemap.xml", () => {
+  const urls: Array<{ loc: string; lastmod?: string }> = [
+    { loc: "https://stock-ai.uk/" },
+    { loc: "https://stock-ai.uk/about" },
+    { loc: "https://stock-ai.uk/disclaimer" },
+    { loc: "https://stock-ai.uk/privacy" },
+    { loc: "https://stock-ai.uk/blog/" },
+  ];
+  for (const p of listPostMeta()) {
+    urls.push({ loc: `https://stock-ai.uk/blog/${p.slug}`, lastmod: p.date });
+  }
+  const items = urls
+    .map(
+      (u) =>
+        `  <url><loc>${u.loc}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ""}</url>`,
+    )
+    .join("\n");
+  const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}\n</urlset>\n`;
+  return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8" } });
+});
 
 app.get("/api/health", (c) => c.json({ status: "ok" }));
 
@@ -526,7 +605,7 @@ app.get("/api/portfolio", async (c) => {
   });
 });
 
-app.post("/api/portfolio/buy", async (c) => {
+app.post("/api/portfolio/buy", requireOwner(), async (c) => {
   const db = drizzle(c.env.DB);
   const body = (await c.req.json()) as {
     code: string;
@@ -686,7 +765,7 @@ app.get("/api/watchlist", async (c) => {
   return c.json({ items, latestPickDate });
 });
 
-app.post("/api/watchlist", async (c) => {
+app.post("/api/watchlist", requireOwner(), async (c) => {
   const db = drizzle(c.env.DB);
   const body = (await c.req.json()) as {
     items?: Array<{ code: string; signalDate: number; entryPrice: number }>;
@@ -725,7 +804,7 @@ app.post("/api/watchlist", async (c) => {
   return c.json({ success: true, added: filtered.length });
 });
 
-app.delete("/api/watchlist/:id", async (c) => {
+app.delete("/api/watchlist/:id", requireOwner(), async (c) => {
   const db = drizzle(c.env.DB);
   const id = Number(c.req.param("id"));
   if (!id) return c.json({ error: "id は必須" }, 400);
@@ -737,7 +816,7 @@ app.delete("/api/watchlist/:id", async (c) => {
   return c.json({ success: true });
 });
 
-app.post("/api/portfolio/sell", async (c) => {
+app.post("/api/portfolio/sell", requireOwner(), async (c) => {
   const db = drizzle(c.env.DB);
   const body = (await c.req.json()) as { id: number };
   if (!body.id) return c.json({ error: "id は必須" }, 400);

@@ -6,6 +6,48 @@ const currentView = ref<View>("home");
 
 const apiStatus = ref("checking...");
 
+const isOwner = ref(false);
+const loginOpen = ref(false);
+const loginPassword = ref("");
+const loginError = ref("");
+const loginSubmitting = ref(false);
+
+const refreshAuth = async () => {
+  try {
+    const r = await fetch("/api/auth/me");
+    const j = (await r.json()) as { authenticated: boolean };
+    isOwner.value = !!j.authenticated;
+  } catch {
+    isOwner.value = false;
+  }
+};
+
+const submitLogin = async () => {
+  loginSubmitting.value = true;
+  loginError.value = "";
+  try {
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: loginPassword.value }),
+    });
+    if (!r.ok) {
+      loginError.value = "パスワードが違います";
+      return;
+    }
+    loginPassword.value = "";
+    loginOpen.value = false;
+    await refreshAuth();
+  } finally {
+    loginSubmitting.value = false;
+  }
+};
+
+const logout = async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  await refreshAuth();
+};
+
 type PatternPick = {
   code: string;
   runDate: number;
@@ -510,6 +552,7 @@ onMounted(async () => {
   } catch {
     apiStatus.value = "error";
   }
+  refreshAuth();
   fetchPatternPicks();
   fetchPortfolio();
   fetchWatchlist();
@@ -533,17 +576,44 @@ onMounted(async () => {
         <button :class="{ nav: true, active: currentView === 'fx' }" @click="openFx">
           FX
         </button>
+        <button v-if="isOwner" class="auth-btn" @click="logout">ログアウト</button>
+        <button v-else class="auth-btn" @click="loginOpen = true">ログイン</button>
       </nav>
     </header>
-    <p class="meta">
+    <p v-if="isOwner" class="meta">
       API: <strong>{{ apiStatus }}</strong>
     </p>
+
+    <div v-if="loginOpen" class="modal-backdrop" @click.self="loginOpen = false">
+      <div class="modal">
+        <h3>オーナーログイン</h3>
+        <form @submit.prevent="submitLogin">
+          <input
+            v-model="loginPassword"
+            type="password"
+            placeholder="パスワード"
+            autocomplete="current-password"
+            autofocus
+          />
+          <p v-if="loginError" class="login-error">{{ loginError }}</p>
+          <div class="modal-actions">
+            <button type="button" @click="loginOpen = false">キャンセル</button>
+            <button type="submit" :disabled="loginSubmitting || !loginPassword">
+              {{ loginSubmitting ? "..." : "ログイン" }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <section v-if="currentView === 'home'" class="pattern-panel">
       <header class="pattern-header">
         <h2>本日のパターン候補 Top 5</h2>
         <span v-if="patternLatestDate" class="pattern-meta">{{ fmtYmd(patternLatestDate) }}</span>
       </header>
+      <p class="pattern-note">
+        過去パターンとの一致度が高い銘柄で、売買を勧めるものではありません。
+      </p>
 
       <div v-if="patternCurrentMonthStat" class="season-banner" :class="currentMonthVerdict.tone">
         <div class="season-title">
@@ -555,15 +625,17 @@ onMounted(async () => {
           <strong>{{ patternCurrentMonthStat.avg_90d > 0 ? "+" : "" }}{{ patternCurrentMonthStat.avg_90d }}%</strong>
         </div>
         <div v-if="recommendedWindow && !recommendedWindow.isCurrent" class="skip-notice">
-          ⏳ <strong>今月は見送り推奨</strong>: 近い将来 <strong>{{ recommendedWindow.buyMonth }}月 (+{{ recommendedWindow.buyAvg }}%, 勝率{{ recommendedWindow.buyWr }}%)</strong> がさらに強いので、そこまで待つのが有利
+          ⏳ <strong>過去の傾向では {{ recommendedWindow.buyMonth }}月の方が成績が高い</strong>
+          (平均 +{{ recommendedWindow.buyAvg }}%, 勝率 {{ recommendedWindow.buyWr }}%)。
+          売買の判断はご自身で。
         </div>
         <div v-if="recommendedWindow" class="season-window">
           <div class="season-window-row">
-            <span class="season-window-label buy">🌱 推奨買付</span>
+            <span class="season-window-label buy">🌱 過去データで成績がよかった買付時期</span>
             <strong>{{ recommendedWindow.buyMonth }}月中</strong>
           </div>
           <div class="season-window-row">
-            <span class="season-window-label sell">🌾 推奨売却</span>
+            <span class="season-window-label sell">🌾 過去データで成績がよかった売却時期</span>
             <strong>{{ recommendedWindow.sellLabel }}</strong>
             <span v-if="recommendedWindow.sellMonthStat" class="season-rank-item">
               (売月実績: 平均{{ recommendedWindow.sellMonthStat.avg_90d > 0 ? "+" : "" }}{{ recommendedWindow.sellMonthStat.avg_90d }}%)
@@ -588,7 +660,7 @@ onMounted(async () => {
       <div v-if="patternLoading" class="pattern-msg">読み込み中...</div>
       <div v-else-if="!patternToday.length" class="pattern-msg">本日は候補なし（マッチゼロ）</div>
       <template v-else>
-      <div class="pattern-actions">
+      <div v-if="isOwner" class="pattern-actions">
         <button class="watch-all-btn" @click="addAllToWatch">今日の {{ patternToday.length }}件をまとめてウォッチ</button>
       </div>
       <table class="pattern-table">
@@ -597,9 +669,9 @@ onMounted(async () => {
             <th>コード</th>
             <th>銘柄名</th>
             <th class="num">エントリー</th>
-            <th class="num">口数</th>
-            <th>購入</th>
-            <th>ウォッチ</th>
+            <th v-if="isOwner" class="num">口数</th>
+            <th v-if="isOwner">仮想記録</th>
+            <th v-if="isOwner">ウォッチ</th>
           </tr>
         </thead>
         <tbody>
@@ -610,17 +682,17 @@ onMounted(async () => {
             </td>
             <td>{{ p.name ?? "-" }}</td>
             <td class="num">{{ Math.round(p.entryClose).toLocaleString() }}円</td>
-            <td class="num">
+            <td v-if="isOwner" class="num">
               <select v-model.number="buyLots[p.code]" class="lot-select">
                 <option v-for="n in 10" :key="n" :value="n">{{ n }}口 ({{ (n * 100 * p.entryClose).toLocaleString() }}円)</option>
               </select>
             </td>
-            <td>
+            <td v-if="isOwner">
               <button class="buy-btn" :disabled="buying[p.code]" @click="buyPick(p)">
-                {{ buying[p.code] ? "処理中..." : "買う" }}
+                {{ buying[p.code] ? "処理中..." : "仮想で記録" }}
               </button>
             </td>
-            <td>
+            <td v-if="isOwner">
               <button
                 v-if="!watchedCodeSet.has(p.code)"
                 class="watch-btn"
@@ -664,7 +736,7 @@ onMounted(async () => {
               <th class="num">現在値</th>
               <th class="num">変動</th>
               <th>最後signal</th>
-              <th>操作</th>
+              <th v-if="isOwner">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -689,7 +761,7 @@ onMounted(async () => {
                 <template v-else-if="w.daysSinceLastSignal !== null">{{ w.daysSinceLastSignal }}日前</template>
                 <template v-else>-</template>
               </td>
-              <td>
+              <td v-if="isOwner">
                 <button class="sell-btn" :disabled="removingWatch[w.id]" @click="removeFromWatch(w.id)">
                   {{ removingWatch[w.id] ? "..." : "削除" }}
                 </button>
@@ -703,8 +775,11 @@ onMounted(async () => {
     <section v-else-if="currentView === 'portfolio'" class="pattern-panel">
       <header class="pattern-header">
         <h2>ポートフォリオ</h2>
-        <span class="pattern-meta">50万円スタート / 手動買付売却</span>
+        <span class="pattern-meta">仮想50万円での検証</span>
       </header>
+      <div class="virtual-badge">
+        🧪 仮想50万円での検証です。実取引は行っていません。
+      </div>
 
       <div v-if="portfolioLoading" class="pattern-msg">読み込み中...</div>
       <div v-else-if="!portfolio" class="pattern-msg">データなし</div>
@@ -758,7 +833,7 @@ onMounted(async () => {
               <th class="num">現在値</th>
               <th class="num">評価額</th>
               <th class="num">含み損益</th>
-              <th>売却</th>
+              <th v-if="isOwner">売却</th>
             </tr>
           </thead>
           <tbody>
@@ -775,9 +850,9 @@ onMounted(async () => {
                 {{ fmtYen(h.unrealizedYen) }}
                 <span class="pattern-n">({{ h.unrealizedPct > 0 ? "+" : "" }}{{ h.unrealizedPct.toFixed(1) }}%)</span>
               </td>
-              <td>
+              <td v-if="isOwner">
                 <button class="sell-btn" :disabled="selling[h.id]" @click="sellHolding(h)">
-                  {{ selling[h.id] ? "処理中..." : "売る" }}
+                  {{ selling[h.id] ? "処理中..." : "仮想で決済" }}
                 </button>
               </td>
             </tr>
@@ -829,6 +904,9 @@ onMounted(async () => {
           1トレード {{ fxLotSize.toLocaleString() }}通貨 / 1pip={{ fxPipYen }}円
         </span>
       </header>
+      <div class="virtual-badge">
+        🧪 仮想50万円での紙上検証です。実取引は行っていません。
+      </div>
 
       <div v-if="fxLoading" class="pattern-msg">読み込み中...</div>
       <div v-else-if="!fxSummary" class="pattern-msg">データなし</div>
@@ -880,7 +958,7 @@ onMounted(async () => {
               <th>日付</th>
               <th>方向</th>
               <th class="num">エントリー</th>
-              <th class="num">確度</th>
+              <th class="num">UP確率</th>
               <th>結果</th>
               <th class="num">pips</th>
               <th class="num">損益</th>
@@ -914,6 +992,19 @@ onMounted(async () => {
         </table>
       </div>
     </section>
+
+    <footer class="app-footer">
+      <p>
+        過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。投資判断はご自身の責任でお願いします。
+      </p>
+      <nav class="footer-nav">
+        <a href="/about">このサイトについて</a>
+        <a href="/disclaimer">免責事項</a>
+        <a href="/privacy">プライバシーポリシー</a>
+        <a href="/blog/">ブログ</a>
+      </nav>
+      <p class="footer-sub">© stock-ai.uk</p>
+    </footer>
   </main>
 </template>
 
@@ -1373,5 +1464,119 @@ main {
 .result-tag.drop {
   background: #fecaca;
   color: #991b1b;
+}
+.auth-btn {
+  margin-left: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #cbd2da;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #333;
+}
+.auth-btn:hover {
+  background: #f1f5f9;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  min-width: 280px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.3);
+}
+.modal h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+.modal input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #cbd2da;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.modal-actions button {
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid #cbd2da;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.modal-actions button[type="submit"] {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+.modal-actions button[type="submit"]:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
+}
+.login-error {
+  color: #c0392b;
+  font-size: 0.8rem;
+  margin: 0.4rem 0 0;
+}
+.pattern-note {
+  margin: 0 0 0.5rem;
+  color: #475569;
+  font-size: 0.78rem;
+}
+.virtual-badge {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #78350f;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.app-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.78rem;
+  text-align: center;
+}
+.app-footer p {
+  margin: 0.3rem 0;
+}
+.footer-nav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 0.4rem 0;
+}
+.footer-nav a {
+  color: #334155;
+  text-decoration: none;
+}
+.footer-nav a:hover {
+  text-decoration: underline;
+}
+.footer-sub {
+  color: #94a3b8;
+  font-size: 0.7rem;
 }
 </style>

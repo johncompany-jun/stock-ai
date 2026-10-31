@@ -2,8 +2,10 @@ node_modules
 .env
 .env.*
 !.env.example
+.dev.vars
 *.log
 .DS_Store
 dist
 .wrangler
 data/*.sql
+tmp/
