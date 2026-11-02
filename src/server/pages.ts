@@ -379,6 +379,9 @@ export const renderContactsAdmin = (
         <header>
           <span class="meta">#${r.id} · ${htmlEscape(r.category)} · ${htmlEscape(fmtTs(r.addedAt))}</span>
           <span class="meta ${r.repliedAt ? "replied" : "unreplied"}">${r.repliedAt ? `返信済 ${htmlEscape(fmtTs(r.repliedAt))}` : "未返信"}</span>
+          <form method="post" action="/admin/contacts/${r.id}/delete" onsubmit="return confirm('この問い合わせを削除しますか?');" style="margin:0;">
+            <button class="btn-del">削除</button>
+          </form>
         </header>
         <p class="email"><a href="mailto:${htmlEscape(r.email)}">${htmlEscape(r.email)}</a></p>
         <pre class="message">${htmlEscape(r.message)}</pre>
@@ -412,6 +415,8 @@ export const renderContactsAdmin = (
       .contact-row .meta.replied { color: #047857; }
       .contact-row .email { margin: 0.25rem 0; font-size: 0.9rem; }
       .contact-row .message { background: #f8fafc; padding: 0.5rem 0.75rem; border-radius: 4px; font-family: inherit; white-space: pre-wrap; margin: 0.4rem 0 0; font-size: 0.9rem; }
+      .btn-del { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.75rem; cursor: pointer; }
+      .btn-del:hover { background: #fecaca; }
     </style>
 `,
   });
@@ -485,6 +490,7 @@ export const renderWaitlistAdmin = (
         <td>${htmlEscape(fmtTs(r.addedAt))}</td>
         <td>${r.confirmedAt ? htmlEscape(fmtTs(r.confirmedAt)) : "—"}</td>
         <td>${r.unsubscribedAt ? htmlEscape(fmtTs(r.unsubscribedAt)) : "—"}</td>
+        <td><form method="post" action="/admin/waitlist/${r.id}/delete" onsubmit="return confirm('${htmlEscape(r.email)} を削除しますか?');"><button class="btn-del">削除</button></form></td>
       </tr>`,
     )
     .join("");
@@ -512,10 +518,10 @@ export const renderWaitlistAdmin = (
       <table>
         <thead>
           <tr>
-            <th>ID</th><th>Email</th><th>Category</th><th>登録 (JST)</th><th>確認済み</th><th>解除</th>
+            <th>ID</th><th>Email</th><th>Category</th><th>登録 (JST)</th><th>確認済み</th><th>解除</th><th></th>
           </tr>
         </thead>
-        <tbody>${items || `<tr><td colspan="6" style="text-align:center;color:#94a3b8;">登録なし</td></tr>`}</tbody>
+        <tbody>${items || `<tr><td colspan="7" style="text-align:center;color:#94a3b8;">登録なし</td></tr>`}</tbody>
       </table>
     </section>
     <style>
@@ -526,6 +532,8 @@ export const renderWaitlistAdmin = (
       table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
       th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
       th { background: #f8fafc; color: #475569; font-size: 0.78rem; }
+      .btn-del { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.75rem; cursor: pointer; }
+      .btn-del:hover { background: #fecaca; }
     </style>
 `,
   });

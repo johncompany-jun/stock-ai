@@ -426,6 +426,26 @@ app.get("/waitlist/thanks", (c) => {
   return htmlResponse(renderWaitlistThanks(status));
 });
 
+app.post("/admin/waitlist/:id/delete", async (c) => {
+  const ok = await isAuthenticated(c.req.header("cookie"), c.env);
+  if (!ok) return c.redirect("/app", 302);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.redirect("/admin/waitlist", 303);
+  const db = drizzle(c.env.DB);
+  await db.delete(waitlist).where(eq(waitlist.id, id));
+  return c.redirect("/admin/waitlist", 303);
+});
+
+app.post("/admin/contacts/:id/delete", async (c) => {
+  const ok = await isAuthenticated(c.req.header("cookie"), c.env);
+  if (!ok) return c.redirect("/app", 302);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.redirect("/admin/contacts", 303);
+  const db = drizzle(c.env.DB);
+  await db.delete(contacts).where(eq(contacts.id, id));
+  return c.redirect("/admin/contacts", 303);
+});
+
 app.get("/admin/waitlist", async (c) => {
   const ok = await isAuthenticated(c.req.header("cookie"), c.env);
   if (!ok) return c.redirect("/app", 302);
