@@ -93,7 +93,7 @@
   .site-logo {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.55rem;
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 1.2rem;
@@ -101,10 +101,10 @@
     text-decoration: none;
     letter-spacing: -0.015em;
   }
-  .site-logo .dot {
-    width: 10px; height: 10px; border-radius: 999px;
-    background: var(--color-brand);
-    box-shadow: 0 0 0 3px var(--color-brand-soft);
+  .site-logo img {
+    width: 26px; height: 26px;
+    display: block;
+    border-radius: 6px;
   }
   .site-nav { display: flex; gap: 1.2rem; align-items: center; }
   .site-nav a {

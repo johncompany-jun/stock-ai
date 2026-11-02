@@ -36,6 +36,7 @@ export const renderLayout = (o: LayoutOpts): string => {
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="${esc(o.title)}" />
   <meta name="twitter:description" content="${esc(o.description)}" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Serif+JP:wght@600;700&display=swap" rel="stylesheet" />
@@ -44,8 +45,9 @@ export const renderLayout = (o: LayoutOpts): string => {
 <body>
   <div class="site-wrap">
     <header class="site-header">
-      <a href="/" class="site-logo"><span class="dot" aria-hidden="true"></span>${SITE_NAME}</a>
+      <a href="/" class="site-logo"><img src="/logo.svg" alt="" width="26" height="26" />${SITE_NAME}</a>
       <nav class="site-nav">
+        <a href="/stocks/">株</a>
         <a href="/fx/">FX</a>
         <a href="/blog/">ブログ</a>
         <a href="/about">このサイト</a>

@@ -129,7 +129,7 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
         <div class="card">
           <h3 class="text-[0.95rem] font-semibold mb-3">日本株 (レンジサイクル)</h3>
           ${renderStocksCard(snapshot.stocks)}
-          <p class="mt-3 text-sm"><a href="/app">株の検証ツールを見る →</a></p>
+          <p class="mt-3 text-sm"><a href="/stocks/">株の検証ログを見る →</a></p>
         </div>
         <div class="card">
           <h3 class="text-[0.95rem] font-semibold mb-3">FX USDJPY (寄付方向)</h3>
@@ -141,19 +141,24 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
 
     <section class="section">
       <h2>このサイトの使い方</h2>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <a href="/fx/" class="card">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <a href="/stocks/" class="card">
           <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">1</div>
-          <div class="font-semibold mb-1">FX の検証ログを見る</div>
+          <div class="font-semibold mb-1">株の検証ログ</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">レンジ安値で検出した銘柄のバックテスト勝率と、月別の季節性を公開しています。</p>
+        </a>
+        <a href="/fx/" class="card">
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">2</div>
+          <div class="font-semibold mb-1">FX の検証ログ</div>
           <p class="text-sm text-[color:var(--color-muted)] m-0">寄付方向の予測と、kNN が返した過去類似日の勝敗を日次で記録しています。</p>
         </a>
         <a href="/blog/" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">2</div>
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">3</div>
           <div class="font-semibold mb-1">ブログを読む</div>
           <p class="text-sm text-[color:var(--color-muted)] m-0">月次レポートと、モデル改善の開発記録を更新しています。</p>
         </a>
         <a href="#waitlist" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">3</div>
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">4</div>
           <div class="font-semibold mb-1">配信を受け取る</div>
           <p class="text-sm text-[color:var(--color-muted)] m-0">待ちリストにご登録いただくと、配信開始時に確認メールをお送りします。</p>
         </a>

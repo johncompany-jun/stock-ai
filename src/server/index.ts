@@ -27,6 +27,14 @@ import {
 } from "./pages";
 import { listPostMeta, renderBlogIndex, renderBlogPost } from "./blog";
 import { renderFxIndex, renderFxLog, renderFxNotFound, type FxLogRow } from "./fx";
+import {
+  renderStocksIndex,
+  type StocksAgg,
+  type StocksHistoryRow,
+  type StocksIndexData,
+  type StocksMonthlyRow,
+  type StocksPick,
+} from "./stocks";
 
 type Bindings = {
   DB: D1Database;
@@ -168,6 +176,128 @@ app.get("/app", (c) => {
 app.get("/about", () => htmlResponse(renderAbout()));
 app.get("/disclaimer", () => htmlResponse(renderDisclaimer()));
 app.get("/privacy", () => htmlResponse(renderPrivacy()));
+
+app.get("/stocks", (c) => c.redirect("/stocks/", 301));
+app.get("/stocks/", async (c) => {
+  const db = drizzle(c.env.DB);
+  const strategy = "range_oscillator_buy";
+
+  const [latestRow] = (await db
+    .select({ d: sql<number>`MAX(${patternPicks.runDate})` })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))) as Array<{ d: number | null }>;
+  const latestDate = latestRow?.d ?? null;
+
+  const today = latestDate
+    ? ((await db
+        .select({
+          code: patternPicks.code,
+          name: stocks.name,
+          patterns: patternPicks.patterns,
+          entryClose: patternPicks.entryClose,
+        })
+        .from(patternPicks)
+        .leftJoin(stocks, eq(stocks.code, patternPicks.code))
+        .where(
+          and(eq(patternPicks.patterns, strategy), eq(patternPicks.runDate, latestDate)),
+        )) as Array<{
+        code: string;
+        name: string | null;
+        patterns: string;
+        entryClose: number;
+      }>)
+    : [];
+
+  const [perPatternAgg] = (await db
+    .select({
+      patterns: patternPicks.patterns,
+      n: sql<number>`COUNT(*)`,
+      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
+      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
+    })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))
+    .groupBy(patternPicks.patterns)) as Array<{
+    patterns: string;
+    n: number;
+    wr30d: number | null;
+    avg30d: number | null;
+  }>;
+
+  const todayEnriched: StocksPick[] = today.map((r) => ({
+    code: r.code,
+    name: r.name,
+    patterns: r.patterns,
+    entryClose: r.entryClose,
+    patternN: perPatternAgg?.n ?? 0,
+    patternWr30d: perPatternAgg?.wr30d ?? null,
+    patternAvg30d: perPatternAgg?.avg30d ?? null,
+  }));
+
+  const [agg] = (await db
+    .select({
+      n: sql<number>`COUNT(*)`,
+      n30d: sql<number>`SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END)`,
+      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
+      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
+      firstDate: sql<number>`MIN(${patternPicks.runDate})`,
+      lastDate: sql<number>`MAX(${patternPicks.runDate})`,
+    })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))) as Array<StocksAgg>;
+
+  const history = (await db
+    .select({
+      runDate: patternPicks.runDate,
+      code: patternPicks.code,
+      name: stocks.name,
+      entryClose: patternPicks.entryClose,
+      return30dPct: patternPicks.return30dPct,
+    })
+    .from(patternPicks)
+    .leftJoin(stocks, eq(stocks.code, patternPicks.code))
+    .where(eq(patternPicks.patterns, strategy))
+    .orderBy(desc(patternPicks.runDate))
+    .limit(50)) as StocksHistoryRow[];
+
+  const monthlyRows = ((await c.env.DB.prepare(
+    `WITH pp AS (
+       SELECT code, run_date, entry_close,
+              CAST(SUBSTR(CAST(run_date AS TEXT), 5, 2) AS INTEGER) AS buy_month
+       FROM pattern_picks WHERE patterns = ?
+     ),
+     with_90 AS (
+       SELECT pp.buy_month, pp.entry_close,
+         (SELECT c.close FROM candles c
+          WHERE c.code = pp.code AND c.date > pp.run_date AND c.close > 0
+          ORDER BY c.date LIMIT 1 OFFSET 89) AS close_90d
+       FROM pp
+     )
+     SELECT buy_month,
+            COUNT(close_90d) AS n,
+            ROUND(100.0 * SUM(CASE WHEN close_90d > entry_close THEN 1 ELSE 0 END) / COUNT(close_90d), 1) AS wr_90d,
+            ROUND(AVG((close_90d - entry_close) / entry_close * 100), 2) AS avg_90d
+     FROM with_90 WHERE close_90d IS NOT NULL
+     GROUP BY buy_month ORDER BY buy_month`,
+  )
+    .bind(strategy)
+    .all()).results) as StocksMonthlyRow[];
+
+  const currentMonth = new Date(Date.now() + 9 * 3600 * 1000).getUTCMonth() + 1;
+  const currentMonthStat = monthlyRows.find((r) => r.buy_month === currentMonth) ?? null;
+
+  const data: StocksIndexData = {
+    latestDate,
+    today: todayEnriched,
+    agg: agg ?? null,
+    history,
+    monthly: monthlyRows,
+    currentMonth,
+    currentMonthStat,
+  };
+
+  return htmlResponse(renderStocksIndex(data));
+});
 
 app.get("/fx", (c) => c.redirect("/fx/", 301));
 app.get("/fx/", async (c) => {
@@ -510,6 +640,7 @@ app.get("/sitemap.xml", async (c) => {
     { loc: "https://stock-ai.uk/privacy" },
     { loc: "https://stock-ai.uk/blog/" },
     { loc: "https://stock-ai.uk/fx/" },
+    { loc: "https://stock-ai.uk/stocks/" },
     { loc: "https://stock-ai.uk/contact" },
   ];
   for (const p of listPostMeta()) {
