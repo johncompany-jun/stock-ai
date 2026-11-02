@@ -2,9 +2,10 @@ name = "stock-ai"
 main = "src/server/index.ts"
 compatibility_date = "2025-01-01"
 
-[[routes]]
-pattern = "stock-ai.uk"
-custom_domain = true
+# カスタムドメイン (stock-ai.uk) binding は Cloudflare ダッシュボード側で既に設定済み。
+# CI の GitHub Secrets トークンに Zone 権限がないため、wrangler.toml 側では管理せず
+# 403 で CI が赤くなるのを回避する。ドメイン設定を変える時は dashboard から行うか、
+# 必要に応じて [[routes]] セクションを一時的に復活させる。
 
 [assets]
 directory = "./dist/client"
