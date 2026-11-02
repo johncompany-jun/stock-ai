@@ -229,3 +229,23 @@ export const fxPredictions = sqliteTable(
 );
 
 export type FxPrediction = typeof fxPredictions.$inferSelect;
+
+export const waitlist = sqliteTable(
+  "waitlist",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull().unique(),
+    category: text("category").notNull(),
+    addedAt: integer("added_at").notNull(),
+    confirmedAt: integer("confirmed_at"),
+    unsubscribedAt: integer("unsubscribed_at"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+  },
+  (t) => ({
+    addedAtIdx: index("waitlist_added_at_idx").on(t.addedAt),
+    categoryIdx: index("waitlist_category_idx").on(t.category),
+  }),
+);
+
+export type Waitlist = typeof waitlist.$inferSelect;

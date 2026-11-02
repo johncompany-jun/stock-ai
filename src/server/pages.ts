@@ -1,6 +1,205 @@
-import { renderLayout } from "./html";
+import { renderLayout, htmlEscape } from "./html";
+import { listPostMeta } from "./blog";
 
 const SUPPORT_MAIL = "johncompany2000jp@gmail.com";
+
+const formatYmd = (ymd: number): string => {
+  const y = Math.floor(ymd / 10000);
+  const m = Math.floor((ymd % 10000) / 100);
+  const d = ymd % 100;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+};
+
+export type HomeSnapshot = {
+  stocks: {
+    latestDate: number | null;
+    todayCount: number;
+    wr30d: number | null;
+    avg30d: number | null;
+    sampleN: number;
+  };
+  fx: {
+    latestDate: string | null;
+    direction: string | null;
+    probability: number | null;
+    confidence: number | null;
+    pnlPips: number | null;
+  };
+};
+
+const renderSnapshotStocks = (s: HomeSnapshot["stocks"]): string => {
+  if (!s.latestDate) {
+    return `<p class="snap-empty">株の検証データはまだ記録されていません。</p>`;
+  }
+  const wr = s.wr30d != null ? `${s.wr30d.toFixed(1)}%` : "—";
+  const avg = s.avg30d != null ? `${s.avg30d >= 0 ? "+" : ""}${s.avg30d.toFixed(2)}%` : "—";
+  return `
+    <dl class="snap-dl">
+      <dt>最新日</dt><dd>${htmlEscape(formatYmd(s.latestDate))}</dd>
+      <dt>当日ピック数</dt><dd>${s.todayCount} 件</dd>
+      <dt>過去 30 日勝率</dt><dd>${wr} <small>(n=${s.sampleN})</small></dd>
+      <dt>平均リターン</dt><dd>${avg}</dd>
+    </dl>
+    <p class="snap-link"><a href="/stocks/">株の検証ログを見る →</a></p>`;
+};
+
+const renderSnapshotFx = (f: HomeSnapshot["fx"]): string => {
+  if (!f.latestDate) {
+    return `<p class="snap-empty">FX の検証データはまだ記録されていません。</p>`;
+  }
+  const dirJa = f.direction === "LONG" ? "買い (LONG)" : f.direction === "SHORT" ? "売り (SHORT)" : "—";
+  const prob = f.probability != null ? `${(f.probability * 100).toFixed(1)}%` : "—";
+  const conf = f.confidence != null ? f.confidence.toFixed(2) : "—";
+  const pnl =
+    f.pnlPips != null ? `${f.pnlPips >= 0 ? "+" : ""}${f.pnlPips.toFixed(1)} pips` : "判定前";
+  return `
+    <dl class="snap-dl">
+      <dt>最新日</dt><dd>${htmlEscape(f.latestDate)}</dd>
+      <dt>方向</dt><dd>${htmlEscape(dirJa)}</dd>
+      <dt>確率</dt><dd>${prob}</dd>
+      <dt>信頼度</dt><dd>${conf}</dd>
+      <dt>結果</dt><dd>${pnl}</dd>
+    </dl>
+    <p class="snap-link"><a href="/fx/">FX の検証ログを見る →</a></p>`;
+};
+
+export const renderHome = (snapshot: HomeSnapshot): string => {
+  const posts = listPostMeta().slice(0, 3);
+  const postItems = posts
+    .map(
+      (p) => `
+      <li>
+        <a href="/blog/${htmlEscape(p.slug)}">
+          <span class="post-date">${htmlEscape(p.date)}</span>
+          <span class="post-title">${htmlEscape(p.title)}</span>
+        </a>
+      </li>`,
+    )
+    .join("");
+
+  return renderLayout({
+    title: "stock-ai — 日本株とFXをAIで検証する個人サイト",
+    description:
+      "日本株のパターン検出と USDJPY の寄付予測を機械学習で日次検証し、仮想50万円で勝率と平均リターンを公開するサイトです。",
+    path: "/",
+    content: `
+    <section class="hero">
+      <h1>日本株とFXをAIで検証する個人サイト</h1>
+      <p class="lead">
+        LSTM と kNN を使って、日本株のパターン検出と USDJPY の寄付方向を日次で検証しています。
+        仮想 50 万円でパターンの勝率と平均リターンを記録・公開し、答え合わせを積み重ねるためのサイトです。
+      </p>
+      <p class="notice">本サイトは過去データにもとづく検証記録であり、売買を勧めるものではありません。</p>
+    </section>
+
+    <section class="today">
+      <h2>今日の検証スナップショット</h2>
+      <div class="snap-grid">
+        <div class="snap-card">
+          <h3>日本株 (レンジサイクル)</h3>
+          ${renderSnapshotStocks(snapshot.stocks)}
+        </div>
+        <div class="snap-card">
+          <h3>FX USDJPY (寄付方向)</h3>
+          ${renderSnapshotFx(snapshot.fx)}
+        </div>
+      </div>
+    </section>
+
+    <section class="how">
+      <h2>このサイトの使い方</h2>
+      <ol>
+        <li><a href="/stocks/">株の検証ログ</a> — レンジ安値で検出した銘柄と、その後の値動き記録</li>
+        <li><a href="/fx/">FX の検証ログ</a> — 寄付方向の予測と、kNN が返した過去類似日の勝敗</li>
+        <li><a href="/blog/">ブログ</a> — 月次レポートと開発記録</li>
+      </ol>
+    </section>
+
+    ${
+      posts.length > 0
+        ? `
+    <section class="latest-posts">
+      <h2>最新のブログ</h2>
+      <ul class="post-list">${postItems}</ul>
+      <p><a href="/blog/">ブログ一覧へ →</a></p>
+    </section>`
+        : ""
+    }
+
+    <section class="waitlist" id="waitlist">
+      <h2>検証ログの配信を受け取る (待ちリスト)</h2>
+      <p>
+        FX 日次ログと株の月次レポートの配信を予定しています。
+        配信が始まる前に、確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。
+        <strong>配信開始時期は未定です。</strong>
+      </p>
+      <form method="post" action="/api/waitlist" class="waitlist-form">
+        <label>
+          <span>メールアドレス</span>
+          <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
+        </label>
+        <fieldset>
+          <legend>興味のあるカテゴリ</legend>
+          <label class="radio"><input type="radio" name="category" value="both" checked /> 両方 (株と FX)</label>
+          <label class="radio"><input type="radio" name="category" value="fx" /> FX のみ</label>
+          <label class="radio"><input type="radio" name="category" value="stocks" /> 株のみ</label>
+        </fieldset>
+        <button type="submit">待ちリストに登録</button>
+        <p class="form-note">
+          メールアドレスは配信目的以外には使用せず、第三者に提供することもありません。
+          詳しくは <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+        </p>
+      </form>
+    </section>
+
+    <section class="about-short">
+      <h2>このサイトについて</h2>
+      <p>
+        個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が
+        build in public で開発しています。詳しくは <a href="/about">このサイトについて</a> と
+        <a href="/disclaimer">免責事項</a> をご覧ください。
+      </p>
+    </section>
+
+    <style>
+      .hero { margin-bottom: 2rem; }
+      .hero .lead { font-size: 1rem; color: #334155; }
+      .today { margin: 2rem 0; }
+      .snap-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+      @media (min-width: 640px) { .snap-grid { grid-template-columns: 1fr 1fr; } }
+      .snap-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; background: #fafafa; }
+      .snap-card h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: #0f172a; }
+      .snap-dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; margin: 0; font-size: 0.9rem; }
+      .snap-dl dt { color: #64748b; }
+      .snap-dl dd { margin: 0; font-weight: 600; color: #0f172a; }
+      .snap-dl small { color: #94a3b8; font-weight: 400; font-size: 0.8em; }
+      .snap-link { margin: 0.6rem 0 0; font-size: 0.85rem; }
+      .snap-empty { color: #64748b; font-size: 0.9rem; }
+      .how ol { margin-left: 0; padding-left: 1.25rem; }
+      .how a { font-weight: 600; }
+      .latest-posts { margin: 2rem 0; }
+      .latest-posts .post-list { list-style: none; padding: 0; margin: 0.5rem 0; }
+      .latest-posts .post-list li { padding: 0.5rem 0; border-bottom: 1px solid #f1f5f9; }
+      .latest-posts a { display: flex; gap: 0.75rem; text-decoration: none; align-items: baseline; }
+      .latest-posts a:hover .post-title { text-decoration: underline; }
+      .latest-posts .post-date { color: #94a3b8; font-size: 0.8rem; font-family: ui-monospace, monospace; flex-shrink: 0; }
+      .latest-posts .post-title { color: #111827; font-weight: 600; }
+      .waitlist { margin: 2.5rem 0; padding: 1rem 1.25rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+      .waitlist h2 { margin-top: 0.25rem; }
+      .waitlist-form { display: grid; gap: 0.75rem; }
+      .waitlist-form label > span { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
+      .waitlist-form input[type="email"] { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
+      .waitlist-form fieldset { border: none; padding: 0; margin: 0; }
+      .waitlist-form legend { font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
+      .waitlist-form .radio { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 0.9rem; font-size: 0.9rem; cursor: pointer; }
+      .waitlist-form button { padding: 0.55rem 1rem; background: #0f172a; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; width: fit-content; }
+      .waitlist-form button:hover { background: #334155; }
+      .form-note { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0; }
+      .about-short { margin-top: 2rem; }
+    </style>
+`,
+  });
+};
 
 export const renderAbout = (): string =>
   renderLayout({
@@ -15,7 +214,7 @@ export const renderAbout = (): string =>
     <p>個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が運営する個人サイトです。build in public で開発過程を X に投稿しています。</p>
 
     <h2>目的</h2>
-    <p>AI を用いた日本株および FX の相場予測モデルの精度を、過去データと仮想運用の形で記録・公開することが目的です。将来的には有料 SaaS 化を視野に入れていますが、現在は無料で公開しています。</p>
+    <p>AI を用いた日本株および FX の相場予測モデルの精度を、過去データと仮想運用の形で記録・公開することが目的です。</p>
 
     <h2>検証の内容</h2>
     <ul>
@@ -36,13 +235,10 @@ export const renderAbout = (): string =>
       <li>バックテストで勝率と平均リターンを提示</li>
     </ul>
 
-    <h2>メール配信について</h2>
-    <p>FX の日次検証ログは、ご希望の方にメールでお送りしています (平日朝 9:05 JST 配信, Resend 利用)。</p>
-    <ul>
-      <li>登録: <a href="mailto:${SUPPORT_MAIL}?subject=stock-ai%20FX%E9%85%8D%E4%BF%A1%E7%99%BB%E9%8C%B2">${SUPPORT_MAIL}</a> まで、件名「stock-ai FX配信登録」で送信ください。</li>
-      <li>解除: 配信メールへの返信で「配信停止」とお送りください。</li>
-    </ul>
-    <p>メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。</p>
+    <h2>配信希望の受付 (待ちリスト)</h2>
+    <p>月次レポートや FX 日次ログの配信を予定しています。待ちリストにご登録いただいた方には、配信が始まる前に確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。</p>
+    <p><a href="/#waitlist">トップページの登録フォームへ</a></p>
+    <p>解除は、配信メールへの返信または <a href="mailto:${SUPPORT_MAIL}">${SUPPORT_MAIL}</a> までご連絡ください。メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。</p>
 `,
   });
 
@@ -74,6 +270,120 @@ export const renderDisclaimer = (): string =>
     <p>本免責事項は予告なく変更されることがあります。</p>
 `,
   });
+
+export const renderWaitlistThanks = (status: "added" | "already"): string =>
+  renderLayout({
+    title: "待ちリスト登録ありがとうございます — stock-ai",
+    description: "待ちリストにご登録いただきありがとうございます。",
+    path: "/waitlist/thanks",
+    content: `
+    <h1>登録を受け付けました</h1>
+    ${
+      status === "added"
+        ? `<p>待ちリストへのご登録ありがとうございます。配信が始まる前に、確認メールをお送りします。</p>`
+        : `<p>このメールアドレスはすでに登録されています。重ねての登録は行っていません。</p>`
+    }
+    <p><strong>配信開始時期は未定です。</strong> 準備が整い次第、ご登録のアドレスに確認メールをお送りします。</p>
+    <p><a href="/">トップへ戻る</a></p>
+`,
+  });
+
+export const renderWaitlistError = (message: string): string =>
+  renderLayout({
+    title: "登録エラー — stock-ai",
+    description: "待ちリスト登録でエラーが発生しました。",
+    path: "/waitlist/error",
+    content: `
+    <h1>登録できませんでした</h1>
+    <p>${htmlEscape(message)}</p>
+    <p><a href="/#waitlist">フォームに戻る</a></p>
+`,
+  });
+
+export type WaitlistAdminRow = {
+  id: number;
+  email: string;
+  category: string;
+  addedAt: number;
+  confirmedAt: number | null;
+  unsubscribedAt: number | null;
+};
+
+export const renderWaitlistAdmin = (
+  counts: { total: number; fx: number; stocks: number; both: number; confirmed: number; unsubscribed: number },
+  rows: WaitlistAdminRow[],
+): string => {
+  const fmtTs = (t: number): string => {
+    const d = new Date(t * 1000);
+    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
+    return (
+      jst.getUTCFullYear() +
+      "-" +
+      String(jst.getUTCMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(jst.getUTCDate()).padStart(2, "0") +
+      " " +
+      String(jst.getUTCHours()).padStart(2, "0") +
+      ":" +
+      String(jst.getUTCMinutes()).padStart(2, "0")
+    );
+  };
+
+  const items = rows
+    .map(
+      (r) => `
+      <tr>
+        <td>${r.id}</td>
+        <td>${htmlEscape(r.email)}</td>
+        <td>${htmlEscape(r.category)}</td>
+        <td>${htmlEscape(fmtTs(r.addedAt))}</td>
+        <td>${r.confirmedAt ? htmlEscape(fmtTs(r.confirmedAt)) : "—"}</td>
+        <td>${r.unsubscribedAt ? htmlEscape(fmtTs(r.unsubscribedAt)) : "—"}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return renderLayout({
+    title: "待ちリスト管理 — stock-ai",
+    description: "waitlist admin",
+    path: "/admin/waitlist",
+    content: `
+    <h1>待ちリスト管理</h1>
+    <section class="counts">
+      <h2>件数</h2>
+      <dl>
+        <dt>合計</dt><dd>${counts.total}</dd>
+        <dt>FX のみ</dt><dd>${counts.fx}</dd>
+        <dt>株のみ</dt><dd>${counts.stocks}</dd>
+        <dt>両方</dt><dd>${counts.both}</dd>
+        <dt>確認済み</dt><dd>${counts.confirmed}</dd>
+        <dt>配信停止</dt><dd>${counts.unsubscribed}</dd>
+      </dl>
+      <p class="hint">目安: 100件を超えたら Resend Pro ($20/月) 検討。それまでは送信コスト不要。</p>
+    </section>
+    <section class="recent">
+      <h2>直近の登録 (最新 100 件)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Email</th><th>Category</th><th>登録 (JST)</th><th>確認済み</th><th>解除</th>
+          </tr>
+        </thead>
+        <tbody>${items || `<tr><td colspan="6" style="text-align:center;color:#94a3b8;">登録なし</td></tr>`}</tbody>
+      </table>
+    </section>
+    <style>
+      .counts dl { display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; font-size: 0.9rem; }
+      .counts dt { color: #64748b; }
+      .counts dd { margin: 0; font-weight: 600; }
+      .counts .hint { color: #64748b; font-size: 0.8rem; margin-top: 0.75rem; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+      th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
+      th { background: #f8fafc; color: #475569; font-size: 0.78rem; }
+    </style>
+`,
+  });
+};
 
 export const renderPrivacy = (): string =>
   renderLayout({

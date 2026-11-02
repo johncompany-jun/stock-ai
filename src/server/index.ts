@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, watchlist } from "./db/schema";
+import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, waitlist, watchlist } from "./db/schema";
 import {
   clearCookie,
   isAuthenticated,
@@ -10,11 +10,23 @@ import {
   signSession,
   timingSafeEqualStr,
 } from "./auth";
-import { renderAbout, renderDisclaimer, renderPrivacy } from "./pages";
+import {
+  renderAbout,
+  renderDisclaimer,
+  renderHome,
+  renderPrivacy,
+  renderWaitlistAdmin,
+  renderWaitlistError,
+  renderWaitlistThanks,
+  type HomeSnapshot,
+  type WaitlistAdminRow,
+} from "./pages";
 import { listPostMeta, renderBlogIndex, renderBlogPost } from "./blog";
+import { renderFxIndex, renderFxLog, renderFxNotFound, type FxLogRow } from "./fx";
 
 type Bindings = {
   DB: D1Database;
+  ASSETS: Fetcher;
   GITHUB_TOKEN?: string;
   OWNER_PASSWORD?: string;
   SESSION_SECRET?: string;
@@ -51,9 +63,213 @@ const htmlResponse = (body: string, status = 200) =>
     headers: { "content-type": "text/html; charset=utf-8" },
   });
 
+const loadHomeSnapshot = async (db: ReturnType<typeof drizzle>): Promise<HomeSnapshot> => {
+  const strategy = "range_oscillator_buy";
+  const [latestStockRow] = (await db
+    .select({ d: sql<number>`MAX(${patternPicks.runDate})` })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))) as Array<{ d: number | null }>;
+  const latestStockDate = latestStockRow?.d ?? null;
+
+  let todayCount = 0;
+  if (latestStockDate) {
+    const [cnt] = (await db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(patternPicks)
+      .where(
+        and(
+          eq(patternPicks.patterns, strategy),
+          eq(patternPicks.runDate, latestStockDate),
+        ),
+      )) as Array<{ n: number }>;
+    todayCount = cnt?.n ?? 0;
+  }
+
+  const [agg] = (await db
+    .select({
+      n: sql<number>`SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END)`,
+      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
+      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
+    })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))) as Array<{
+    n: number | null;
+    wr30d: number | null;
+    avg30d: number | null;
+  }>;
+
+  const [latestFx] = (await db
+    .select({
+      date: fxPredictions.date,
+      direction: fxPredictions.direction,
+      probability: fxPredictions.probability,
+      confidence: fxPredictions.confidence,
+      pnlPips: fxPredictions.pnlPips,
+    })
+    .from(fxPredictions)
+    .where(eq(fxPredictions.pair, "USDJPY"))
+    .orderBy(desc(fxPredictions.date))
+    .limit(1)) as Array<{
+    date: string;
+    direction: string;
+    probability: number;
+    confidence: number;
+    pnlPips: number | null;
+  }>;
+
+  return {
+    stocks: {
+      latestDate: latestStockDate,
+      todayCount,
+      wr30d: agg?.wr30d ?? null,
+      avg30d: agg?.avg30d ?? null,
+      sampleN: agg?.n ?? 0,
+    },
+    fx: {
+      latestDate: latestFx?.date ?? null,
+      direction: latestFx?.direction ?? null,
+      probability: latestFx?.probability ?? null,
+      confidence: latestFx?.confidence ?? null,
+      pnlPips: latestFx?.pnlPips ?? null,
+    },
+  };
+};
+
+app.get("/", async (c) => {
+  const db = drizzle(c.env.DB);
+  const snapshot = await loadHomeSnapshot(db);
+  return htmlResponse(renderHome(snapshot));
+});
+
+const DEV_SPA_SHELL = `<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-ai (app)</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>`;
+
+app.get("/app", (c) => {
+  if (c.env.ASSETS) {
+    return c.env.ASSETS.fetch(new URL("/index.html", c.req.url).toString());
+  }
+  return htmlResponse(DEV_SPA_SHELL);
+});
+
 app.get("/about", () => htmlResponse(renderAbout()));
 app.get("/disclaimer", () => htmlResponse(renderDisclaimer()));
 app.get("/privacy", () => htmlResponse(renderPrivacy()));
+
+app.get("/fx", (c) => c.redirect("/fx/", 301));
+app.get("/fx/", async (c) => {
+  const db = drizzle(c.env.DB);
+  const rows = (await db
+    .select({
+      date: fxPredictions.date,
+      direction: fxPredictions.direction,
+      entryPrice: fxPredictions.entryPrice,
+      probability: fxPredictions.probability,
+      confidence: fxPredictions.confidence,
+      longWins: fxPredictions.longWins,
+      shortWins: fxPredictions.shortWins,
+      avgLong: fxPredictions.avgLong,
+      avgShort: fxPredictions.avgShort,
+      k: fxPredictions.k,
+      actualLabelPips: fxPredictions.actualLabelPips,
+      actualTpHitMin: fxPredictions.actualTpHitMin,
+      actualSlHitMin: fxPredictions.actualSlHitMin,
+      pnlPips: fxPredictions.pnlPips,
+      hit: fxPredictions.hit,
+    })
+    .from(fxPredictions)
+    .where(eq(fxPredictions.pair, "USDJPY"))
+    .orderBy(desc(fxPredictions.date))) as FxLogRow[];
+
+  const resolved = rows.filter((r) => r.hit != null);
+  const totalPips = resolved.reduce((s, r) => s + (r.pnlPips ?? 0), 0);
+  const winCount = resolved.filter((r) => r.hit === 1).length;
+  const recent30 = resolved.slice(0, 30);
+  const recent30Pips = recent30.reduce((s, r) => s + (r.pnlPips ?? 0), 0);
+  const recent30Wins = recent30.filter((r) => r.hit === 1).length;
+
+  return htmlResponse(
+    renderFxIndex({
+      rows,
+      totalPips,
+      resolvedCount: resolved.length,
+      winCount,
+      recent30Pips,
+      recent30Count: recent30.length,
+      recent30Wins,
+    }),
+  );
+});
+
+app.get("/fx/log/:date", async (c) => {
+  const date = c.req.param("date");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return htmlResponse(renderFxNotFound(date), 400);
+  }
+  const db = drizzle(c.env.DB);
+  const [row] = (await db
+    .select({
+      date: fxPredictions.date,
+      direction: fxPredictions.direction,
+      entryPrice: fxPredictions.entryPrice,
+      probability: fxPredictions.probability,
+      confidence: fxPredictions.confidence,
+      longWins: fxPredictions.longWins,
+      shortWins: fxPredictions.shortWins,
+      avgLong: fxPredictions.avgLong,
+      avgShort: fxPredictions.avgShort,
+      k: fxPredictions.k,
+      actualLabelPips: fxPredictions.actualLabelPips,
+      actualTpHitMin: fxPredictions.actualTpHitMin,
+      actualSlHitMin: fxPredictions.actualSlHitMin,
+      pnlPips: fxPredictions.pnlPips,
+      hit: fxPredictions.hit,
+    })
+    .from(fxPredictions)
+    .where(and(eq(fxPredictions.pair, "USDJPY"), eq(fxPredictions.date, date)))
+    .limit(1)) as FxLogRow[];
+
+  if (!row) return htmlResponse(renderFxNotFound(date), 404);
+
+  const [prevRow] = (await db
+    .select({
+      date: fxPredictions.date,
+      direction: fxPredictions.direction,
+      entryPrice: fxPredictions.entryPrice,
+      probability: fxPredictions.probability,
+      confidence: fxPredictions.confidence,
+      longWins: fxPredictions.longWins,
+      shortWins: fxPredictions.shortWins,
+      avgLong: fxPredictions.avgLong,
+      avgShort: fxPredictions.avgShort,
+      k: fxPredictions.k,
+      actualLabelPips: fxPredictions.actualLabelPips,
+      actualTpHitMin: fxPredictions.actualTpHitMin,
+      actualSlHitMin: fxPredictions.actualSlHitMin,
+      pnlPips: fxPredictions.pnlPips,
+      hit: fxPredictions.hit,
+    })
+    .from(fxPredictions)
+    .where(
+      and(
+        eq(fxPredictions.pair, "USDJPY"),
+        sql`${fxPredictions.date} < ${date}`,
+      ),
+    )
+    .orderBy(desc(fxPredictions.date))
+    .limit(1)) as FxLogRow[];
+
+  return htmlResponse(renderFxLog(row, prevRow ?? null));
+});
 
 app.get("/blog", (c) => c.redirect("/blog/", 301));
 app.get("/blog/", () => htmlResponse(renderBlogIndex()));
@@ -63,21 +279,137 @@ app.get("/blog/:slug", (c) => {
   return htmlResponse(html);
 });
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VALID_CATEGORIES = new Set(["fx", "stocks", "both"]);
+
+app.post("/api/waitlist", async (c) => {
+  const contentType = c.req.header("content-type") ?? "";
+  let email = "";
+  let category = "both";
+  if (contentType.includes("application/json")) {
+    const body = (await c.req.json().catch(() => ({}))) as { email?: string; category?: string };
+    email = (body.email ?? "").trim().toLowerCase();
+    category = (body.category ?? "both").trim();
+  } else {
+    const body = await c.req.parseBody();
+    email = String(body.email ?? "").trim().toLowerCase();
+    category = String(body.category ?? "both").trim();
+  }
+
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
+    return htmlResponse(renderWaitlistError("メールアドレスの形式が正しくありません。"), 400);
+  }
+  if (!VALID_CATEGORIES.has(category)) category = "both";
+
+  const now = Math.floor(Date.now() / 1000);
+  const ip = c.req.header("cf-connecting-ip") ?? null;
+  const ua = c.req.header("user-agent") ?? null;
+
+  const db = drizzle(c.env.DB);
+  const existing = (await db
+    .select({ id: waitlist.id })
+    .from(waitlist)
+    .where(eq(waitlist.email, email))
+    .limit(1)) as Array<{ id: number }>;
+
+  if (existing.length > 0) {
+    return c.redirect("/waitlist/thanks?status=already", 303);
+  }
+
+  await db.insert(waitlist).values({
+    email,
+    category,
+    addedAt: now,
+    confirmedAt: null,
+    unsubscribedAt: null,
+    ip,
+    userAgent: ua,
+  });
+
+  return c.redirect("/waitlist/thanks?status=added", 303);
+});
+
+app.get("/waitlist/thanks", (c) => {
+  const status = c.req.query("status") === "already" ? "already" : "added";
+  return htmlResponse(renderWaitlistThanks(status));
+});
+
+app.get("/admin/waitlist", async (c) => {
+  const ok = await isAuthenticated(c.req.header("cookie"), c.env);
+  if (!ok) return c.redirect("/app", 302);
+  const db = drizzle(c.env.DB);
+  const rows = (await db
+    .select({
+      id: waitlist.id,
+      email: waitlist.email,
+      category: waitlist.category,
+      addedAt: waitlist.addedAt,
+      confirmedAt: waitlist.confirmedAt,
+      unsubscribedAt: waitlist.unsubscribedAt,
+    })
+    .from(waitlist)
+    .orderBy(desc(waitlist.addedAt))
+    .limit(100)) as WaitlistAdminRow[];
+
+  const [agg] = (await db
+    .select({
+      total: sql<number>`COUNT(*)`,
+      fx: sql<number>`SUM(CASE WHEN category = 'fx' THEN 1 ELSE 0 END)`,
+      stocks: sql<number>`SUM(CASE WHEN category = 'stocks' THEN 1 ELSE 0 END)`,
+      both: sql<number>`SUM(CASE WHEN category = 'both' THEN 1 ELSE 0 END)`,
+      confirmed: sql<number>`SUM(CASE WHEN confirmed_at IS NOT NULL THEN 1 ELSE 0 END)`,
+      unsubscribed: sql<number>`SUM(CASE WHEN unsubscribed_at IS NOT NULL THEN 1 ELSE 0 END)`,
+    })
+    .from(waitlist)) as Array<{
+    total: number;
+    fx: number;
+    stocks: number;
+    both: number;
+    confirmed: number;
+    unsubscribed: number;
+  }>;
+
+  return htmlResponse(
+    renderWaitlistAdmin(
+      {
+        total: agg?.total ?? 0,
+        fx: agg?.fx ?? 0,
+        stocks: agg?.stocks ?? 0,
+        both: agg?.both ?? 0,
+        confirmed: agg?.confirmed ?? 0,
+        unsubscribed: agg?.unsubscribed ?? 0,
+      },
+      rows,
+    ),
+  );
+});
+
 app.get("/robots.txt", () => {
   const body = `User-agent: *\nAllow: /\nSitemap: https://stock-ai.uk/sitemap.xml\n`;
   return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8" } });
 });
 
-app.get("/sitemap.xml", () => {
+app.get("/sitemap.xml", async (c) => {
+  const db = drizzle(c.env.DB);
   const urls: Array<{ loc: string; lastmod?: string }> = [
     { loc: "https://stock-ai.uk/" },
     { loc: "https://stock-ai.uk/about" },
     { loc: "https://stock-ai.uk/disclaimer" },
     { loc: "https://stock-ai.uk/privacy" },
     { loc: "https://stock-ai.uk/blog/" },
+    { loc: "https://stock-ai.uk/fx/" },
   ];
   for (const p of listPostMeta()) {
     urls.push({ loc: `https://stock-ai.uk/blog/${p.slug}`, lastmod: p.date });
+  }
+  const fxDates = (await db
+    .select({ date: fxPredictions.date })
+    .from(fxPredictions)
+    .where(eq(fxPredictions.pair, "USDJPY"))
+    .orderBy(desc(fxPredictions.date))
+    .limit(500)) as Array<{ date: string }>;
+  for (const r of fxDates) {
+    urls.push({ loc: `https://stock-ai.uk/fx/log/${r.date}`, lastmod: r.date });
   }
   const items = urls
     .map(
@@ -855,6 +1187,11 @@ app.post("/api/portfolio/sell", requireOwner(), async (c) => {
     .where(eq(virtualPortfolioTrades.id, body.id));
 
   return c.json({ success: true, pnlYen: Math.round(pnlYen), pnlPct: Number(pnlPct.toFixed(2)) });
+});
+
+app.all("*", (c) => {
+  if (c.env.ASSETS) return c.env.ASSETS.fetch(c.req.raw);
+  return c.notFound();
 });
 
 const dispatchDailyFxSignal = async (token: string): Promise<void> => {

@@ -1,7 +1,7 @@
 COMPOSE := docker compose
 SERVICE := app
 
-.PHONY: help up down restart build rebuild logs ps shell sh install add typecheck deploy clean db-generate db-migrate db-import db-reset db-shell db-fetch-candles db-fetch-candles-sample db-fetch-candles-remote db-predict db-predict-sample
+.PHONY: help up down restart build rebuild logs ps shell sh install add typecheck deploy clean db-generate db-migrate db-migrate-remote db-import db-reset db-shell db-fetch-candles db-fetch-candles-sample db-fetch-candles-remote db-predict db-predict-sample
 
 help: ## 使い方を表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -55,6 +55,9 @@ db-generate: ## スキーマから SQL マイグレーションを生成
 
 db-migrate: ## ローカル D1 にマイグレーションを適用
 	$(COMPOSE) exec $(SERVICE) bunx wrangler d1 migrations apply stock-ai --local
+
+db-migrate-remote: ## Cloudflare 本番 D1 にマイグレーションを適用 (要 CLOUDFLARE_API_TOKEN)
+	$(COMPOSE) exec -e CLOUDFLARE_API_TOKEN $(SERVICE) bunx wrangler d1 migrations apply stock-ai --remote
 
 db-import: ## CSV から SQL 生成→ローカル D1 に流し込み
 	$(COMPOSE) exec $(SERVICE) bun run scripts/import-stocks.ts

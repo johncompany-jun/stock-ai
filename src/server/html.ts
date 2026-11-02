@@ -65,6 +65,7 @@ export const renderLayout = (o: LayoutOpts): string => {
     <a href="/" class="logo">${SITE_NAME}</a>
     <nav>
       <a href="/">ホーム</a>
+      <a href="/fx/">FX</a>
       <a href="/blog/">ブログ</a>
       <a href="/about">このサイトについて</a>
     </nav>
