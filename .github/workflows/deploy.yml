@@ -29,8 +29,11 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Apply D1 migrations (remote)
-        run: bunx wrangler d1 migrations apply stock-ai --remote
+      # 既存の 0008-0014 は wrangler の d1_migrations tracker に記録されていないが
+      # テーブルは本番 D1 に既に存在する (手動投入の履歴)。tracker を使わず、
+      # 新規マイグレーションのみ idempotent (IF NOT EXISTS) に直接実行する。
+      - name: Apply new D1 migrations (remote)
+        run: bunx wrangler d1 execute stock-ai --remote --file=drizzle/0015_add_waitlist.sql
 
       - name: Build client
         run: bunx vite build
