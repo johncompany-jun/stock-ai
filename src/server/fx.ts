@@ -74,14 +74,14 @@ export const renderFxIndex = (data: FxIndexData): string => {
   return renderLayout({
     title: "FX USDJPY 寄付方向の検証ログ — stock-ai",
     description:
-      "USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測し、TP+30/SL-20pips で検証した日次ログの一覧。",
+      "USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測し、LONG TP+25 / SHORT TP+30 / SL-20 pips の非対称 R:R で検証した日次ログの一覧。",
     path: "/fx/",
     content: `
     <section class="hero">
       <h1>FX USDJPY 寄付方向の検証ログ</h1>
       <p class="lead">
         USDJPY の 9:00 JST 寄付足 (= 00:00 UTC) に対して、5-seed MLP アンサンブルと kNN で方向判定を行い、
-        TP +30 / SL -20 pips の非対称 R:R で検証した日次ログの一覧です。
+        LONG TP+25 / SHORT TP+30 / SL-20 pips の非対称 R:R で検証した日次ログの一覧です。
       </p>
       <div class="notice">仮想検証であり、実売買を推奨するものではありません。</div>
     </section>
@@ -192,7 +192,7 @@ export const renderFxLog = (row: FxLogRow, prev: FxLogRow | null): string => {
         <h2>過去類似日 (k=${row.k})</h2>
         <p>
           当日の寄付条件に特徴量が最も近い過去 ${row.k} 営業日を kNN で検索しました。
-          その日の 9:00-11:00 のうちに TP+30pips / SL-20pips に先に当たった側で勝敗を定義しています。
+          その日の 9:00-11:00 のうちに LONG なら TP+25 pips、SHORT なら TP+30 pips、どちらも SL-20 pips に先に当たった側で勝敗を定義しています。
         </p>
         <div class="card">
           <div class="stat-grid">
@@ -238,7 +238,7 @@ export const renderFxLog = (row: FxLogRow, prev: FxLogRow | null): string => {
         <h2>検証ルール</h2>
         <ul class="list-disc pl-5 space-y-1 text-sm">
           <li>エントリー: 9:00 JST (= 00:00 UTC) の寄付足</li>
-          <li>利確/損切: TP +30 pips / SL -20 pips</li>
+          <li>利確/損切: LONG TP+25 pips / SHORT TP+30 pips / 共通 SL-20 pips (非対称 R:R)</li>
           <li>強制手仕舞い: 11:00 JST 時点でまだ残っていればクローズ</li>
           <li>モデル: 5-seed MLP アンサンブル + 類似日 kNN</li>
         </ul>
