@@ -1,8 +1,6 @@
 import { renderLayout, htmlEscape } from "./html";
 import { listPostMeta } from "./blog";
 
-const SUPPORT_MAIL = "johncompany2000jp@gmail.com";
-
 const formatYmd = (ymd: number): string => {
   const y = Math.floor(ymd / 10000);
   const m = Math.floor((ymd % 10000) / 100);
@@ -238,7 +236,7 @@ export const renderAbout = (): string =>
     <h2>配信希望の受付 (待ちリスト)</h2>
     <p>月次レポートや FX 日次ログの配信を予定しています。待ちリストにご登録いただいた方には、配信が始まる前に確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。</p>
     <p><a href="/#waitlist">トップページの登録フォームへ</a></p>
-    <p>解除は、配信メールへの返信または <a href="mailto:${SUPPORT_MAIL}">${SUPPORT_MAIL}</a> までご連絡ください。メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。</p>
+    <p>配信停止・データ削除のご依頼、そのほかのご連絡は <a href="/contact">お問い合わせフォーム</a> からお送りください。メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。</p>
 `,
   });
 
@@ -270,6 +268,154 @@ export const renderDisclaimer = (): string =>
     <p>本免責事項は予告なく変更されることがあります。</p>
 `,
   });
+
+const CONTACT_CATEGORIES = [
+  { value: "general", label: "一般的な問い合わせ" },
+  { value: "unsubscribe", label: "配信停止・データ削除" },
+  { value: "bug", label: "不具合報告" },
+  { value: "other", label: "その他" },
+];
+
+export const renderContactForm = (errorMessage?: string): string =>
+  renderLayout({
+    title: "お問い合わせ — stock-ai",
+    description: "stock-ai への問い合わせ、配信停止、不具合報告はこちらからお送りください。",
+    path: "/contact",
+    content: `
+    <h1>お問い合わせ</h1>
+    <p>
+      stock-ai へのご質問、配信停止・データ削除のご依頼、不具合報告はこちらのフォームからお送りください。
+      ご返信は入力いただいたメールアドレス宛に行います。
+    </p>
+    ${errorMessage ? `<div class="notice">${htmlEscape(errorMessage)}</div>` : ""}
+    <form method="post" action="/api/contact" class="contact-form">
+      <label>
+        <span>メールアドレス (返信先)</span>
+        <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" maxlength="254" />
+      </label>
+      <label>
+        <span>種別</span>
+        <select name="category" required>
+          ${CONTACT_CATEGORIES.map(
+            (c) => `<option value="${htmlEscape(c.value)}">${htmlEscape(c.label)}</option>`,
+          ).join("")}
+        </select>
+      </label>
+      <label>
+        <span>内容</span>
+        <textarea name="message" required rows="6" maxlength="4000" placeholder="お問い合わせ内容をご記入ください"></textarea>
+      </label>
+      <div class="hp" aria-hidden="true">
+        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <button type="submit">送信</button>
+      <p class="form-note">
+        送信いただいた内容とメールアドレスは返信目的でのみ使用し、第三者に提供することはありません。
+        詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+      </p>
+    </form>
+
+    <style>
+      .contact-form { display: grid; gap: 0.9rem; max-width: 540px; }
+      .contact-form label { display: block; }
+      .contact-form label > span { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
+      .contact-form input[type="email"], .contact-form select, .contact-form textarea {
+        width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; box-sizing: border-box; font-family: inherit;
+      }
+      .contact-form textarea { resize: vertical; min-height: 140px; }
+      .contact-form button { padding: 0.55rem 1.25rem; background: #0f172a; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; width: fit-content; }
+      .contact-form button:hover { background: #334155; }
+      .contact-form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+      .form-note { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0; }
+    </style>
+`,
+  });
+
+export const renderContactThanks = (): string =>
+  renderLayout({
+    title: "お問い合わせありがとうございます — stock-ai",
+    description: "お問い合わせを受け付けました。",
+    path: "/contact/thanks",
+    content: `
+    <h1>お問い合わせを受け付けました</h1>
+    <p>内容を確認のうえ、ご入力いただいたメールアドレス宛にご返信いたします。少々お時間をいただく場合があります。</p>
+    <p><a href="/">トップへ戻る</a></p>
+`,
+  });
+
+export type ContactsAdminRow = {
+  id: number;
+  email: string;
+  category: string;
+  message: string;
+  addedAt: number;
+  repliedAt: number | null;
+};
+
+export const renderContactsAdmin = (
+  counts: { total: number; unreplied: number },
+  rows: ContactsAdminRow[],
+): string => {
+  const fmtTs = (t: number): string => {
+    const d = new Date(t * 1000);
+    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
+    return (
+      jst.getUTCFullYear() +
+      "-" +
+      String(jst.getUTCMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(jst.getUTCDate()).padStart(2, "0") +
+      " " +
+      String(jst.getUTCHours()).padStart(2, "0") +
+      ":" +
+      String(jst.getUTCMinutes()).padStart(2, "0")
+    );
+  };
+
+  const items = rows
+    .map(
+      (r) => `
+      <article class="contact-row">
+        <header>
+          <span class="meta">#${r.id} · ${htmlEscape(r.category)} · ${htmlEscape(fmtTs(r.addedAt))}</span>
+          <span class="meta ${r.repliedAt ? "replied" : "unreplied"}">${r.repliedAt ? `返信済 ${htmlEscape(fmtTs(r.repliedAt))}` : "未返信"}</span>
+        </header>
+        <p class="email"><a href="mailto:${htmlEscape(r.email)}">${htmlEscape(r.email)}</a></p>
+        <pre class="message">${htmlEscape(r.message)}</pre>
+      </article>`,
+    )
+    .join("");
+
+  return renderLayout({
+    title: "問い合わせ管理 — stock-ai",
+    description: "contacts admin",
+    path: "/admin/contacts",
+    content: `
+    <h1>問い合わせ管理</h1>
+    <section class="counts">
+      <dl>
+        <dt>合計</dt><dd>${counts.total}</dd>
+        <dt>未返信</dt><dd>${counts.unreplied}</dd>
+      </dl>
+    </section>
+    <section class="list">
+      ${items || `<p style="color:#94a3b8;">問い合わせはまだありません。</p>`}
+    </section>
+    <style>
+      .counts dl { display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; font-size: 0.9rem; margin: 0 0 1rem; }
+      .counts dt { color: #64748b; }
+      .counts dd { margin: 0; font-weight: 600; }
+      .contact-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; background: #fff; }
+      .contact-row header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+      .contact-row .meta { font-size: 0.78rem; color: #64748b; font-family: ui-monospace, monospace; }
+      .contact-row .meta.unreplied { color: #b91c1c; font-weight: 600; }
+      .contact-row .meta.replied { color: #047857; }
+      .contact-row .email { margin: 0.25rem 0; font-size: 0.9rem; }
+      .contact-row .message { background: #f8fafc; padding: 0.5rem 0.75rem; border-radius: 4px; font-family: inherit; white-space: pre-wrap; margin: 0.4rem 0 0; font-size: 0.9rem; }
+    </style>
+`,
+  });
+};
 
 export const renderWaitlistThanks = (status: "added" | "already"): string =>
   renderLayout({
@@ -412,7 +558,7 @@ export const renderPrivacy = (): string =>
     <p>法令に基づく場合を除き、第三者にメールアドレスを提供することはありません。</p>
 
     <h2>5. 配信停止・削除</h2>
-    <p>配信停止・データ削除をご希望の方は、配信メールへの返信または <a href="mailto:${SUPPORT_MAIL}">${SUPPORT_MAIL}</a> までご連絡ください。速やかに対応します。</p>
+    <p>配信停止・データ削除をご希望の方は、<a href="/contact">お問い合わせフォーム</a> からご連絡ください。速やかに対応します。</p>
 
     <h2>6. Cookie</h2>
     <p>オーナーのログイン状態を保持するためだけに、HttpOnly / Secure / SameSite=Strict の Cookie を 1 つ利用します。アクセス解析用の Cookie やサードパーティ Cookie は使用していません。</p>

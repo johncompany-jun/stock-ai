@@ -249,3 +249,23 @@ export const waitlist = sqliteTable(
 );
 
 export type Waitlist = typeof waitlist.$inferSelect;
+
+export const contacts = sqliteTable(
+  "contacts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    category: text("category").notNull(),
+    message: text("message").notNull(),
+    addedAt: integer("added_at").notNull(),
+    repliedAt: integer("replied_at"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+  },
+  (t) => ({
+    addedAtIdx: index("contacts_added_at_idx").on(t.addedAt),
+    categoryIdx: index("contacts_category_idx").on(t.category),
+  }),
+);
+
+export type Contact = typeof contacts.$inferSelect;

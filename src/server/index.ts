@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { candles, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, waitlist, watchlist } from "./db/schema";
+import { candles, contacts, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, waitlist, watchlist } from "./db/schema";
 import {
   clearCookie,
   isAuthenticated,
@@ -12,12 +12,16 @@ import {
 } from "./auth";
 import {
   renderAbout,
+  renderContactForm,
+  renderContactThanks,
+  renderContactsAdmin,
   renderDisclaimer,
   renderHome,
   renderPrivacy,
   renderWaitlistAdmin,
   renderWaitlistError,
   renderWaitlistThanks,
+  type ContactsAdminRow,
   type HomeSnapshot,
   type WaitlistAdminRow,
 } from "./pages";
@@ -281,6 +285,94 @@ app.get("/blog/:slug", (c) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_CATEGORIES = new Set(["fx", "stocks", "both"]);
+const VALID_CONTACT_CATEGORIES = new Set(["general", "unsubscribe", "bug", "other"]);
+
+app.get("/contact", () => htmlResponse(renderContactForm()));
+
+app.post("/api/contact", async (c) => {
+  const contentType = c.req.header("content-type") ?? "";
+  let email = "";
+  let category = "general";
+  let message = "";
+  let honeypot = "";
+  if (contentType.includes("application/json")) {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      email?: string;
+      category?: string;
+      message?: string;
+      website?: string;
+    };
+    email = (body.email ?? "").trim();
+    category = (body.category ?? "general").trim();
+    message = (body.message ?? "").trim();
+    honeypot = (body.website ?? "").trim();
+  } else {
+    const body = await c.req.parseBody();
+    email = String(body.email ?? "").trim();
+    category = String(body.category ?? "general").trim();
+    message = String(body.message ?? "").trim();
+    honeypot = String(body.website ?? "").trim();
+  }
+
+  if (honeypot) {
+    return c.redirect("/contact/thanks", 303);
+  }
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
+    return htmlResponse(renderContactForm("メールアドレスの形式が正しくありません。"), 400);
+  }
+  if (!message || message.length > 4000) {
+    return htmlResponse(renderContactForm("内容が空、または長すぎます (最大 4000 文字)。"), 400);
+  }
+  if (!VALID_CONTACT_CATEGORIES.has(category)) category = "general";
+
+  const now = Math.floor(Date.now() / 1000);
+  const ip = c.req.header("cf-connecting-ip") ?? null;
+  const ua = c.req.header("user-agent") ?? null;
+
+  const db = drizzle(c.env.DB);
+  await db.insert(contacts).values({
+    email: email.toLowerCase(),
+    category,
+    message,
+    addedAt: now,
+    repliedAt: null,
+    ip,
+    userAgent: ua,
+  });
+
+  return c.redirect("/contact/thanks", 303);
+});
+
+app.get("/contact/thanks", () => htmlResponse(renderContactThanks()));
+
+app.get("/admin/contacts", async (c) => {
+  const ok = await isAuthenticated(c.req.header("cookie"), c.env);
+  if (!ok) return c.redirect("/app", 302);
+  const db = drizzle(c.env.DB);
+  const rows = (await db
+    .select({
+      id: contacts.id,
+      email: contacts.email,
+      category: contacts.category,
+      message: contacts.message,
+      addedAt: contacts.addedAt,
+      repliedAt: contacts.repliedAt,
+    })
+    .from(contacts)
+    .orderBy(desc(contacts.addedAt))
+    .limit(200)) as ContactsAdminRow[];
+
+  const [agg] = (await db
+    .select({
+      total: sql<number>`COUNT(*)`,
+      unreplied: sql<number>`SUM(CASE WHEN replied_at IS NULL THEN 1 ELSE 0 END)`,
+    })
+    .from(contacts)) as Array<{ total: number; unreplied: number }>;
+
+  return htmlResponse(
+    renderContactsAdmin({ total: agg?.total ?? 0, unreplied: agg?.unreplied ?? 0 }, rows),
+  );
+});
 
 app.post("/api/waitlist", async (c) => {
   const contentType = c.req.header("content-type") ?? "";
@@ -398,6 +490,7 @@ app.get("/sitemap.xml", async (c) => {
     { loc: "https://stock-ai.uk/privacy" },
     { loc: "https://stock-ai.uk/blog/" },
     { loc: "https://stock-ai.uk/fx/" },
+    { loc: "https://stock-ai.uk/contact" },
   ];
   for (const p of listPostMeta()) {
     urls.push({ loc: `https://stock-ai.uk/blog/${p.slug}`, lastmod: p.date });
