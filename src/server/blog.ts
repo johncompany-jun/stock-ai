@@ -47,12 +47,12 @@ export const renderBlogIndex = (): string => {
   const items = posts
     .map(
       (p) => `
-      <li class="post-item">
+      <li>
         <a href="/blog/${htmlEscape(p.slug)}">
           <span class="post-date">${htmlEscape(p.date)}</span>
           <span class="post-title">${htmlEscape(p.title)}</span>
+          ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
         </a>
-        ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
       </li>`,
     )
     .join("\n");
@@ -61,18 +61,13 @@ export const renderBlogIndex = (): string => {
     description: "stock-ai の開発ログと、モデル改善・検証結果の記録。",
     path: "/blog/",
     content: `
-    <h1>ブログ</h1>
-    <p>開発ログと、モデル改善・検証結果の記録です。</p>
-    <ul class="post-list">${items}</ul>
-    <style>
-      .post-list { list-style: none; padding: 0; margin: 1rem 0; }
-      .post-item { padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; }
-      .post-item a { display: flex; gap: 0.75rem; text-decoration: none; align-items: baseline; flex-wrap: wrap; }
-      .post-item a:hover .post-title { text-decoration: underline; }
-      .post-date { color: #94a3b8; font-size: 0.85rem; font-family: ui-monospace, monospace; flex-shrink: 0; }
-      .post-title { color: #111827; font-weight: 600; }
-      .post-desc { margin: 0.25rem 0 0; color: #475569; font-size: 0.9rem; }
-    </style>
+    <section class="hero">
+      <h1>ブログ</h1>
+      <p class="lead">開発ログと、モデル改善・検証結果の記録です。</p>
+    </section>
+    <section class="section">
+      <ul class="post-list">${items}</ul>
+    </section>
 `,
   });
 };
@@ -87,14 +82,16 @@ export const renderBlogPost = (slug: string): string | null => {
     path: `/blog/${post.slug}`,
     ogType: "article",
     content: `
-    <article>
-      <header style="margin-bottom:1rem;">
-        <p style="margin:0;color:#94a3b8;font-size:0.85rem;font-family:ui-monospace,monospace;">${htmlEscape(post.date)}</p>
+    <article class="prose">
+      <header class="hero">
+        <p class="text-xs text-[color:var(--color-muted-soft)] font-mono m-0 mb-2">${htmlEscape(post.date)}</p>
         <h1>${htmlEscape(post.title)}</h1>
       </header>
-      ${html}
-      <hr style="margin:2rem 0;border:none;border-top:1px solid #e5e7eb;" />
-      <p><a href="/blog/">← ブログ一覧へ</a></p>
+      <div class="blog-body">
+        ${html}
+      </div>
+      <hr class="my-8 border-0 border-t border-[color:var(--color-divider)]" />
+      <p><a href="/blog/" class="btn btn-outline">← ブログ一覧へ</a></p>
     </article>
 `,
   });

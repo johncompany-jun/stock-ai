@@ -9,3 +9,5 @@ dist
 .wrangler
 data/*.sql
 tmp/
+# Tailwind build output (generated from src/styles.css by `bun run css:build`)
+public/styles.css

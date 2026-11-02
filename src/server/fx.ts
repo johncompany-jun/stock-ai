@@ -21,17 +21,23 @@ export type FxLogRow = {
 const dirJa = (d: string): string =>
   d === "LONG" ? "買い (LONG)" : d === "SHORT" ? "売り (SHORT)" : d;
 
+const dirClass = (d: string): string =>
+  d === "LONG" ? "long" : d === "SHORT" ? "short" : "";
+
 const fmtPips = (v: number | null): string =>
   v == null ? "判定前" : `${v >= 0 ? "+" : ""}${v.toFixed(1)} pips`;
 
 const fmtPct = (v: number): string => `${(v * 100).toFixed(1)}%`;
 
-const hitLabel = (hit: number | null): string => {
-  if (hit == null) return `<span class="hit pending">判定前</span>`;
+const hitBadge = (hit: number | null): string => {
+  if (hit == null) return `<span class="badge pending">判定前</span>`;
   return hit === 1
-    ? `<span class="hit win">勝ち</span>`
-    : `<span class="hit loss">負け</span>`;
+    ? `<span class="badge win">勝ち</span>`
+    : `<span class="badge loss">負け</span>`;
 };
+
+const pipsCls = (v: number | null): string =>
+  v == null ? "" : v >= 0 ? "pos" : "neg";
 
 export type FxIndexData = {
   rows: FxLogRow[];
@@ -53,10 +59,10 @@ export const renderFxIndex = (data: FxIndexData): string => {
       (r) => `
       <li>
         <a href="/fx/log/${htmlEscape(r.date)}">
-          <span class="log-date">${htmlEscape(r.date)}</span>
-          <span class="log-dir ${r.direction.toLowerCase()}">${htmlEscape(dirJa(r.direction))}</span>
-          <span class="log-pips ${(r.pnlPips ?? 0) >= 0 ? "pos" : "neg"}">${htmlEscape(fmtPips(r.pnlPips))}</span>
-          ${hitLabel(r.hit)}
+          <span class="date">${htmlEscape(r.date)}</span>
+          <span class="dir ${dirClass(r.direction)}">${htmlEscape(dirJa(r.direction))}</span>
+          <span class="pips ${pipsCls(r.pnlPips)}">${htmlEscape(fmtPips(r.pnlPips))}</span>
+          ${hitBadge(r.hit)}
         </a>
       </li>`,
     )
@@ -71,94 +77,86 @@ export const renderFxIndex = (data: FxIndexData): string => {
       "USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測し、TP+30/SL-20pips で検証した日次ログの一覧。",
     path: "/fx/",
     content: `
-    <h1>FX USDJPY 寄付方向の検証ログ</h1>
-    <p>
-      USDJPY の 9:00 JST 寄付足 (= 00:00 UTC) に対して、5-seed MLP アンサンブルと kNN で方向判定を行い、
-      TP +30 / SL -20 pips の非対称 R:R で検証した日次ログの一覧です。
-      <strong>仮想検証であり、実売買を推奨するものではありません。</strong>
-    </p>
+    <section class="hero">
+      <h1>FX USDJPY 寄付方向の検証ログ</h1>
+      <p class="lead">
+        USDJPY の 9:00 JST 寄付足 (= 00:00 UTC) に対して、5-seed MLP アンサンブルと kNN で方向判定を行い、
+        TP +30 / SL -20 pips の非対称 R:R で検証した日次ログの一覧です。
+      </p>
+      <div class="notice">仮想検証であり、実売買を推奨するものではありません。</div>
+    </section>
 
     ${
       latest
         ? `
-    <section class="latest-card">
+    <section class="section">
       <h2>最新のシグナル (${htmlEscape(latest.date)})</h2>
-      <dl class="latest-dl">
-        <dt>方向</dt><dd>${htmlEscape(dirJa(latest.direction))}</dd>
-        <dt>確率</dt><dd>${fmtPct(latest.probability)}</dd>
-        <dt>信頼度</dt><dd>${latest.confidence.toFixed(2)}</dd>
-        <dt>類似日</dt><dd>LONG勝ち ${latest.longWins} / SHORT勝ち ${latest.shortWins} <small>(k=${latest.k})</small></dd>
-        <dt>結果</dt><dd>${fmtPips(latest.pnlPips)} ${hitLabel(latest.hit)}</dd>
-      </dl>
-      <p class="latest-link"><a href="/fx/log/${htmlEscape(latest.date)}">詳細を見る →</a></p>
+      <div class="card">
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="label">方向</span>
+            <span class="value sm"><span class="badge ${dirClass(latest.direction)}">${htmlEscape(dirJa(latest.direction))}</span></span>
+          </div>
+          <div class="stat">
+            <span class="label">確率</span>
+            <span class="value">${fmtPct(latest.probability)}</span>
+            <span class="sub">信頼度 ${latest.confidence.toFixed(2)}</span>
+          </div>
+          <div class="stat">
+            <span class="label">類似日</span>
+            <span class="value sm">LONG勝ち ${latest.longWins} / SHORT勝ち ${latest.shortWins}</span>
+            <span class="sub">k=${latest.k}</span>
+          </div>
+          <div class="stat">
+            <span class="label">結果</span>
+            <span class="value ${pipsCls(latest.pnlPips)}">${fmtPips(latest.pnlPips)}</span>
+          </div>
+        </div>
+        <p class="mt-4"><a href="/fx/log/${htmlEscape(latest.date)}" class="btn btn-outline">詳細を見る →</a></p>
+      </div>
     </section>`
         : ""
     }
 
-    <section class="agg">
+    <section class="section">
       <h2>通算成績</h2>
-      <dl class="agg-dl">
-        <dt>直近 30 営業日</dt>
-        <dd>${recent30Pips >= 0 ? "+" : ""}${recent30Pips.toFixed(1)} pips <small>(勝率 ${recentWr}% / n=${recent30Count})</small></dd>
-        <dt>通算</dt>
-        <dd>${totalPips >= 0 ? "+" : ""}${totalPips.toFixed(1)} pips <small>(勝率 ${wr}% / n=${resolvedCount})</small></dd>
-      </dl>
+      <div class="stat-grid">
+        <div class="card">
+          <span class="label block text-xs text-[color:var(--color-muted)] mb-1 font-semibold">直近 30 営業日</span>
+          <span class="value ${pipsCls(recent30Pips)} font-mono text-2xl font-bold">${recent30Pips >= 0 ? "+" : ""}${recent30Pips.toFixed(1)} pips</span>
+          <div class="text-xs text-[color:var(--color-muted-soft)] mt-1">勝率 ${recentWr}% (n=${recent30Count})</div>
+        </div>
+        <div class="card">
+          <span class="label block text-xs text-[color:var(--color-muted)] mb-1 font-semibold">通算</span>
+          <span class="value ${pipsCls(totalPips)} font-mono text-2xl font-bold">${totalPips >= 0 ? "+" : ""}${totalPips.toFixed(1)} pips</span>
+          <div class="text-xs text-[color:var(--color-muted-soft)] mt-1">勝率 ${wr}% (n=${resolvedCount})</div>
+        </div>
+      </div>
     </section>
 
-    <section class="list">
+    <section class="section">
       <h2>日次ログ一覧 (直近 60 件)</h2>
-      <ul class="log-list">${items}</ul>
+      <ul class="row-list">${items}</ul>
     </section>
-
-    <style>
-      .latest-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
-      .latest-card h2 { margin-top: 0; }
-      .latest-dl { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.75rem; margin: 0; font-size: 0.95rem; }
-      .latest-dl dt { color: #64748b; font-size: 0.85rem; }
-      .latest-dl dd { margin: 0; font-weight: 600; }
-      .latest-dl dd small { color: #94a3b8; font-weight: 400; font-size: 0.85em; }
-      .latest-link { margin: 0.75rem 0 0; font-size: 0.9rem; }
-      .agg-dl { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.75rem; margin: 0; font-size: 0.95rem; }
-      .agg-dl dt { color: #64748b; font-size: 0.85rem; }
-      .agg-dl dd { margin: 0; font-weight: 600; }
-      .agg-dl dd small { color: #94a3b8; font-weight: 400; }
-      .log-list { list-style: none; padding: 0; margin: 1rem 0; }
-      .log-list li { border-bottom: 1px solid #f1f5f9; }
-      .log-list a { display: grid; grid-template-columns: 7rem 7rem 1fr auto; gap: 0.5rem; align-items: center; padding: 0.5rem 0; text-decoration: none; color: inherit; font-size: 0.9rem; }
-      .log-list a:hover { background: #f8fafc; }
-      .log-date { font-family: ui-monospace, monospace; color: #475569; }
-      .log-dir { font-weight: 600; }
-      .log-dir.long { color: #047857; }
-      .log-dir.short { color: #b91c1c; }
-      .log-pips { text-align: right; font-family: ui-monospace, monospace; }
-      .log-pips.pos { color: #047857; }
-      .log-pips.neg { color: #b91c1c; }
-      .hit { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 999px; font-weight: 600; }
-      .hit.win { background: #d1fae5; color: #065f46; }
-      .hit.loss { background: #fee2e2; color: #991b1b; }
-      .hit.pending { background: #f1f5f9; color: #475569; }
-    </style>
 `,
   });
 };
 
-export const renderFxLog = (
-  row: FxLogRow,
-  prev: FxLogRow | null,
-): string => {
-  const dateJp = row.date;
-  const title = `USDJPY ${dateJp} 寄付方向の検証ログ — ${dirJa(row.direction)}`;
-  const description = `USDJPY ${dateJp} の寄付方向は ${dirJa(row.direction)}。確率 ${fmtPct(row.probability)}, 類似日 k=${row.k} 中 LONG勝ち${row.longWins}/SHORT勝ち${row.shortWins}。結果: ${fmtPips(row.pnlPips)}`;
+export const renderFxLog = (row: FxLogRow, prev: FxLogRow | null): string => {
+  const title = `USDJPY ${row.date} 寄付方向の検証ログ — ${dirJa(row.direction)}`;
+  const description = `USDJPY ${row.date} の寄付方向は ${dirJa(row.direction)}。確率 ${fmtPct(row.probability)}, 類似日 k=${row.k} 中 LONG勝ち${row.longWins}/SHORT勝ち${row.shortWins}。結果: ${fmtPips(row.pnlPips)}`;
 
   const prevSection = prev
     ? `
-    <section class="prev">
+    <section class="section">
       <h2>前日の答え合わせ (${htmlEscape(prev.date)})</h2>
-      <dl class="log-dl">
-        <dt>方向</dt><dd>${htmlEscape(dirJa(prev.direction))}</dd>
-        <dt>結果</dt><dd>${fmtPips(prev.pnlPips)} ${hitLabel(prev.hit)}</dd>
-      </dl>
-      <p><a href="/fx/log/${htmlEscape(prev.date)}">前日の詳細 →</a></p>
+      <div class="card">
+        <div class="stat-grid">
+          <div class="stat"><span class="label">方向</span><span class="value sm"><span class="badge ${dirClass(prev.direction)}">${htmlEscape(dirJa(prev.direction))}</span></span></div>
+          <div class="stat"><span class="label">結果</span><span class="value ${pipsCls(prev.pnlPips)}">${fmtPips(prev.pnlPips)}</span></div>
+        </div>
+        <p class="mt-4"><a href="/fx/log/${htmlEscape(prev.date)}" class="btn btn-outline">前日の詳細 →</a></p>
+      </div>
     </section>`
     : "";
 
@@ -173,81 +171,85 @@ export const renderFxLog = (
     ogType: "article",
     content: `
     <article>
-      <header class="log-header">
-        <p class="log-date-head">${htmlEscape(dateJp)}</p>
-        <h1>USDJPY 寄付方向: ${htmlEscape(dirJa(row.direction))}</h1>
+      <header class="hero">
+        <p class="text-xs text-[color:var(--color-muted-soft)] font-mono m-0 mb-2">${htmlEscape(row.date)}</p>
+        <h1>USDJPY 寄付方向: <span class="badge ${dirClass(row.direction)}" style="font-size: 0.6em; vertical-align: middle;">${htmlEscape(dirJa(row.direction))}</span></h1>
       </header>
 
-      <section class="signal">
+      <section class="section">
         <h2>モデル判定</h2>
-        <dl class="log-dl">
-          <dt>方向</dt><dd class="dir-${row.direction.toLowerCase()}">${htmlEscape(dirJa(row.direction))}</dd>
-          <dt>確率</dt><dd>${fmtPct(row.probability)}</dd>
-          <dt>信頼度</dt><dd>${row.confidence.toFixed(2)}</dd>
-          <dt>エントリー価格</dt><dd>${row.entryPrice.toFixed(3)}</dd>
-        </dl>
+        <div class="card">
+          <div class="stat-grid">
+            <div class="stat"><span class="label">方向</span><span class="value sm"><span class="badge ${dirClass(row.direction)}">${htmlEscape(dirJa(row.direction))}</span></span></div>
+            <div class="stat"><span class="label">確率</span><span class="value">${fmtPct(row.probability)}</span></div>
+            <div class="stat"><span class="label">信頼度</span><span class="value sm">${row.confidence.toFixed(2)}</span></div>
+            <div class="stat"><span class="label">エントリー価格</span><span class="value sm">${row.entryPrice.toFixed(3)}</span></div>
+          </div>
+        </div>
       </section>
 
-      <section class="knn">
+      <section class="section">
         <h2>過去類似日 (k=${row.k})</h2>
         <p>
           当日の寄付条件に特徴量が最も近い過去 ${row.k} 営業日を kNN で検索しました。
           その日の 9:00-11:00 のうちに TP+30pips / SL-20pips に先に当たった側で勝敗を定義しています。
         </p>
-        <dl class="log-dl">
-          <dt>LONG 勝ちの類似日</dt><dd>${row.longWins} 日 (平均 ${row.avgLong >= 0 ? "+" : ""}${row.avgLong.toFixed(1)} pips)</dd>
-          <dt>SHORT 勝ちの類似日</dt><dd>${row.shortWins} 日 (平均 ${row.avgShort >= 0 ? "+" : ""}${row.avgShort.toFixed(1)} pips)</dd>
-          <dt>優勢側</dt><dd>${dominantSide} (${nnShare}%)</dd>
-        </dl>
+        <div class="card">
+          <div class="stat-grid">
+            <div class="stat">
+              <span class="label">LONG 勝ちの類似日</span>
+              <span class="value sm">${row.longWins} 日</span>
+              <span class="sub">平均 ${row.avgLong >= 0 ? "+" : ""}${row.avgLong.toFixed(1)} pips</span>
+            </div>
+            <div class="stat">
+              <span class="label">SHORT 勝ちの類似日</span>
+              <span class="value sm">${row.shortWins} 日</span>
+              <span class="sub">平均 ${row.avgShort >= 0 ? "+" : ""}${row.avgShort.toFixed(1)} pips</span>
+            </div>
+            <div class="stat">
+              <span class="label">優勢側</span>
+              <span class="value sm"><span class="badge ${dirClass(dominantSide)}">${dominantSide}</span></span>
+              <span class="sub">${nnShare}%</span>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section class="result">
+      <section class="section">
         <h2>当日の結果</h2>
         ${
           row.pnlPips == null
-            ? `<p>当日の結果はまだ判定されていません。11:00 以降に自動更新されます。</p>`
+            ? `<div class="card"><p class="m-0 text-sm">当日の結果はまだ判定されていません。11:00 以降に自動更新されます。</p></div>`
             : `
-        <dl class="log-dl">
-          <dt>pips</dt><dd>${fmtPips(row.pnlPips)}</dd>
-          <dt>勝敗</dt><dd>${hitLabel(row.hit)}</dd>
-          <dt>TP ヒット (分)</dt><dd>${row.actualTpHitMin ?? "—"}</dd>
-          <dt>SL ヒット (分)</dt><dd>${row.actualSlHitMin ?? "—"}</dd>
-        </dl>`
+        <div class="card">
+          <div class="stat-grid">
+            <div class="stat"><span class="label">pips</span><span class="value ${pipsCls(row.pnlPips)}">${fmtPips(row.pnlPips)}</span></div>
+            <div class="stat"><span class="label">勝敗</span><span class="value sm">${hitBadge(row.hit)}</span></div>
+            <div class="stat"><span class="label">TP ヒット (分)</span><span class="value sm">${row.actualTpHitMin ?? "—"}</span></div>
+            <div class="stat"><span class="label">SL ヒット (分)</span><span class="value sm">${row.actualSlHitMin ?? "—"}</span></div>
+          </div>
+        </div>`
         }
       </section>
 
       ${prevSection}
 
-      <section class="notes">
+      <section class="section">
         <h2>検証ルール</h2>
-        <ul>
+        <ul class="list-disc pl-5 space-y-1 text-sm">
           <li>エントリー: 9:00 JST (= 00:00 UTC) の寄付足</li>
           <li>利確/損切: TP +30 pips / SL -20 pips</li>
           <li>強制手仕舞い: 11:00 JST 時点でまだ残っていればクローズ</li>
           <li>モデル: 5-seed MLP アンサンブル + 類似日 kNN</li>
         </ul>
-        <p class="notice">
+        <div class="notice-strip mt-4">
           <strong>仮想検証であり、実売買を推奨するものではありません。</strong>
           投資判断はご自身の責任でお願いします。
-        </p>
+        </div>
       </section>
 
-      <p><a href="/fx/">← 日次ログ一覧へ</a></p>
+      <p class="mt-6"><a href="/fx/" class="btn btn-outline">← 日次ログ一覧へ</a></p>
     </article>
-
-    <style>
-      .log-header p.log-date-head { margin: 0; color: #94a3b8; font-size: 0.85rem; font-family: ui-monospace, monospace; }
-      .log-dl { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.75rem; margin: 0.5rem 0 0; font-size: 0.95rem; }
-      .log-dl dt { color: #64748b; font-size: 0.85rem; }
-      .log-dl dd { margin: 0; font-weight: 600; }
-      .dir-long { color: #047857; }
-      .dir-short { color: #b91c1c; }
-      .hit { font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-weight: 600; }
-      .hit.win { background: #d1fae5; color: #065f46; }
-      .hit.loss { background: #fee2e2; color: #991b1b; }
-      .hit.pending { background: #f1f5f9; color: #475569; }
-      .signal, .knn, .result, .prev, .notes { margin: 1.5rem 0; }
-    </style>
 `,
   });
 };
@@ -258,8 +260,10 @@ export const renderFxNotFound = (date: string): string =>
     description: "指定日の FX 検証ログは記録されていません。",
     path: `/fx/log/${date}`,
     content: `
-    <h1>FX ログが見つかりません</h1>
-    <p>日付 <code>${htmlEscape(date)}</code> の USDJPY 検証ログは記録されていません。</p>
-    <p><a href="/fx/">日次ログ一覧へ戻る</a></p>
+    <section class="hero">
+      <h1>FX ログが見つかりません</h1>
+      <p class="lead">日付 <code>${htmlEscape(date)}</code> の USDJPY 検証ログは記録されていません。</p>
+    </section>
+    <p><a href="/fx/" class="btn btn-outline">日次ログ一覧へ戻る</a></p>
 `,
   });

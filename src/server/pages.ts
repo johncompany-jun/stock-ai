@@ -25,40 +25,72 @@ export type HomeSnapshot = {
   };
 };
 
-const renderSnapshotStocks = (s: HomeSnapshot["stocks"]): string => {
+const dirJa = (d: string | null): string =>
+  d === "LONG" ? "買い (LONG)" : d === "SHORT" ? "売り (SHORT)" : "—";
+
+const dirClass = (d: string | null): string =>
+  d === "LONG" ? "long" : d === "SHORT" ? "short" : "";
+
+const renderStocksCard = (s: HomeSnapshot["stocks"]): string => {
   if (!s.latestDate) {
-    return `<p class="snap-empty">株の検証データはまだ記録されていません。</p>`;
+    return `<p class="text-sm text-[color:var(--color-muted)]">株の検証データはまだ記録されていません。</p>`;
   }
   const wr = s.wr30d != null ? `${s.wr30d.toFixed(1)}%` : "—";
   const avg = s.avg30d != null ? `${s.avg30d >= 0 ? "+" : ""}${s.avg30d.toFixed(2)}%` : "—";
+  const avgCls = s.avg30d != null && s.avg30d >= 0 ? "pos" : s.avg30d != null && s.avg30d < 0 ? "neg" : "";
   return `
-    <dl class="snap-dl">
-      <dt>最新日</dt><dd>${htmlEscape(formatYmd(s.latestDate))}</dd>
-      <dt>当日ピック数</dt><dd>${s.todayCount} 件</dd>
-      <dt>過去 30 日勝率</dt><dd>${wr} <small>(n=${s.sampleN})</small></dd>
-      <dt>平均リターン</dt><dd>${avg}</dd>
-    </dl>
-    <p class="snap-link"><a href="/stocks/">株の検証ログを見る →</a></p>`;
+    <div class="stat-grid">
+      <div class="stat">
+        <span class="label">最新日</span>
+        <span class="value sm">${htmlEscape(formatYmd(s.latestDate))}</span>
+      </div>
+      <div class="stat">
+        <span class="label">当日ピック数</span>
+        <span class="value">${s.todayCount}<span class="sub"> 件</span></span>
+      </div>
+      <div class="stat">
+        <span class="label">過去 30 日勝率</span>
+        <span class="value">${wr}</span>
+        <span class="sub">n = ${s.sampleN}</span>
+      </div>
+      <div class="stat">
+        <span class="label">平均リターン</span>
+        <span class="value ${avgCls}">${avg}</span>
+      </div>
+    </div>`;
 };
 
-const renderSnapshotFx = (f: HomeSnapshot["fx"]): string => {
+const renderFxCard = (f: HomeSnapshot["fx"]): string => {
   if (!f.latestDate) {
-    return `<p class="snap-empty">FX の検証データはまだ記録されていません。</p>`;
+    return `<p class="text-sm text-[color:var(--color-muted)]">FX の検証データはまだ記録されていません。</p>`;
   }
-  const dirJa = f.direction === "LONG" ? "買い (LONG)" : f.direction === "SHORT" ? "売り (SHORT)" : "—";
   const prob = f.probability != null ? `${(f.probability * 100).toFixed(1)}%` : "—";
   const conf = f.confidence != null ? f.confidence.toFixed(2) : "—";
   const pnl =
-    f.pnlPips != null ? `${f.pnlPips >= 0 ? "+" : ""}${f.pnlPips.toFixed(1)} pips` : "判定前";
+    f.pnlPips != null
+      ? `${f.pnlPips >= 0 ? "+" : ""}${f.pnlPips.toFixed(1)} pips`
+      : "判定前";
+  const pnlCls = f.pnlPips != null && f.pnlPips >= 0 ? "pos" : f.pnlPips != null && f.pnlPips < 0 ? "neg" : "";
   return `
-    <dl class="snap-dl">
-      <dt>最新日</dt><dd>${htmlEscape(f.latestDate)}</dd>
-      <dt>方向</dt><dd>${htmlEscape(dirJa)}</dd>
-      <dt>確率</dt><dd>${prob}</dd>
-      <dt>信頼度</dt><dd>${conf}</dd>
-      <dt>結果</dt><dd>${pnl}</dd>
-    </dl>
-    <p class="snap-link"><a href="/fx/">FX の検証ログを見る →</a></p>`;
+    <div class="stat-grid">
+      <div class="stat">
+        <span class="label">最新日</span>
+        <span class="value sm">${htmlEscape(f.latestDate)}</span>
+      </div>
+      <div class="stat">
+        <span class="label">方向</span>
+        <span class="value sm"><span class="badge ${dirClass(f.direction)}">${htmlEscape(dirJa(f.direction))}</span></span>
+      </div>
+      <div class="stat">
+        <span class="label">確率</span>
+        <span class="value">${prob}</span>
+        <span class="sub">信頼度 ${conf}</span>
+      </div>
+      <div class="stat">
+        <span class="label">結果</span>
+        <span class="value ${pnlCls}">${pnl}</span>
+      </div>
+    </div>`;
 };
 
 export const renderHome = (snapshot: HomeSnapshot): string => {
@@ -70,6 +102,7 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
         <a href="/blog/${htmlEscape(p.slug)}">
           <span class="post-date">${htmlEscape(p.date)}</span>
           <span class="post-title">${htmlEscape(p.title)}</span>
+          ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
         </a>
       </li>`,
     )
@@ -82,119 +115,99 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
     path: "/",
     content: `
     <section class="hero">
-      <h1>日本株とFXをAIで検証する個人サイト</h1>
+      <h1>AI の答え合わせを、<br />毎日公開しています。</h1>
       <p class="lead">
-        LSTM と kNN を使って、日本株のパターン検出と USDJPY の寄付方向を日次で検証しています。
-        仮想 50 万円でパターンの勝率と平均リターンを記録・公開し、答え合わせを積み重ねるためのサイトです。
+        日本株とFX (USDJPY) の値動きを機械学習モデルで予測し、
+        仮想 50 万円で勝率と平均リターンを日次で検証・公開しているサイトです。
       </p>
-      <p class="notice">本サイトは過去データにもとづく検証記録であり、売買を勧めるものではありません。</p>
+      <div class="notice">本サイトは過去データにもとづく検証記録であり、売買を勧めるものではありません。</div>
     </section>
 
-    <section class="today">
+    <section class="section">
       <h2>今日の検証スナップショット</h2>
-      <div class="snap-grid">
-        <div class="snap-card">
-          <h3>日本株 (レンジサイクル)</h3>
-          ${renderSnapshotStocks(snapshot.stocks)}
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="card">
+          <h3 class="text-[0.95rem] font-semibold mb-3">日本株 (レンジサイクル)</h3>
+          ${renderStocksCard(snapshot.stocks)}
+          <p class="mt-3 text-sm"><a href="/app">株の検証ツールを見る →</a></p>
         </div>
-        <div class="snap-card">
-          <h3>FX USDJPY (寄付方向)</h3>
-          ${renderSnapshotFx(snapshot.fx)}
+        <div class="card">
+          <h3 class="text-[0.95rem] font-semibold mb-3">FX USDJPY (寄付方向)</h3>
+          ${renderFxCard(snapshot.fx)}
+          <p class="mt-3 text-sm"><a href="/fx/">FX の検証ログを見る →</a></p>
         </div>
       </div>
     </section>
 
-    <section class="how">
+    <section class="section">
       <h2>このサイトの使い方</h2>
-      <ol>
-        <li><a href="/stocks/">株の検証ログ</a> — レンジ安値で検出した銘柄と、その後の値動き記録</li>
-        <li><a href="/fx/">FX の検証ログ</a> — 寄付方向の予測と、kNN が返した過去類似日の勝敗</li>
-        <li><a href="/blog/">ブログ</a> — 月次レポートと開発記録</li>
-      </ol>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <a href="/fx/" class="card">
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">1</div>
+          <div class="font-semibold mb-1">FX の検証ログを見る</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">寄付方向の予測と、kNN が返した過去類似日の勝敗を日次で記録しています。</p>
+        </a>
+        <a href="/blog/" class="card">
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">2</div>
+          <div class="font-semibold mb-1">ブログを読む</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">月次レポートと、モデル改善の開発記録を更新しています。</p>
+        </a>
+        <a href="#waitlist" class="card">
+          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">3</div>
+          <div class="font-semibold mb-1">配信を受け取る</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">待ちリストにご登録いただくと、配信開始時に確認メールをお送りします。</p>
+        </a>
+      </div>
     </section>
 
     ${
       posts.length > 0
         ? `
-    <section class="latest-posts">
+    <section class="section">
       <h2>最新のブログ</h2>
       <ul class="post-list">${postItems}</ul>
-      <p><a href="/blog/">ブログ一覧へ →</a></p>
+      <p class="mt-3 text-sm"><a href="/blog/">ブログ一覧へ →</a></p>
     </section>`
         : ""
     }
 
-    <section class="waitlist" id="waitlist">
+    <section class="section" id="waitlist">
       <h2>検証ログの配信を受け取る (待ちリスト)</h2>
-      <p>
-        FX 日次ログと株の月次レポートの配信を予定しています。
-        配信が始まる前に、確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。
-        <strong>配信開始時期は未定です。</strong>
-      </p>
-      <form method="post" action="/api/waitlist" class="waitlist-form">
-        <label>
-          <span>メールアドレス</span>
-          <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
-        </label>
-        <fieldset>
-          <legend>興味のあるカテゴリ</legend>
-          <label class="radio"><input type="radio" name="category" value="both" checked /> 両方 (株と FX)</label>
-          <label class="radio"><input type="radio" name="category" value="fx" /> FX のみ</label>
-          <label class="radio"><input type="radio" name="category" value="stocks" /> 株のみ</label>
-        </fieldset>
-        <button type="submit">待ちリストに登録</button>
-        <p class="form-note">
-          メールアドレスは配信目的以外には使用せず、第三者に提供することもありません。
-          詳しくは <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+      <div class="card-soft">
+        <p class="text-sm mb-4">
+          FX 日次ログと株の月次レポートの配信を予定しています。
+          配信が始まる前に、確認メールをお送りします。
+          確認ボタンを押していただいた方にのみ本配信を行います。
+          <strong>配信開始時期は未定です。</strong>
         </p>
-      </form>
+        <form method="post" action="/api/waitlist" class="form-block">
+          <label>
+            <span>メールアドレス</span>
+            <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <fieldset>
+            <legend>興味のあるカテゴリ</legend>
+            <label class="radio"><input type="radio" name="category" value="both" checked /> 両方 (株と FX)</label>
+            <label class="radio"><input type="radio" name="category" value="fx" /> FX のみ</label>
+            <label class="radio"><input type="radio" name="category" value="stocks" /> 株のみ</label>
+          </fieldset>
+          <button type="submit" class="btn">待ちリストに登録</button>
+          <p class="form-note">
+            メールアドレスは配信目的以外には使用せず、第三者に提供することもありません。
+            詳しくは <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+          </p>
+        </form>
+      </div>
     </section>
 
-    <section class="about-short">
+    <section class="section">
       <h2>このサイトについて</h2>
-      <p>
+      <p class="text-sm">
         個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が
         build in public で開発しています。詳しくは <a href="/about">このサイトについて</a> と
         <a href="/disclaimer">免責事項</a> をご覧ください。
       </p>
     </section>
-
-    <style>
-      .hero { margin-bottom: 2rem; }
-      .hero .lead { font-size: 1rem; color: #334155; }
-      .today { margin: 2rem 0; }
-      .snap-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
-      @media (min-width: 640px) { .snap-grid { grid-template-columns: 1fr 1fr; } }
-      .snap-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; background: #fafafa; }
-      .snap-card h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: #0f172a; }
-      .snap-dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; margin: 0; font-size: 0.9rem; }
-      .snap-dl dt { color: #64748b; }
-      .snap-dl dd { margin: 0; font-weight: 600; color: #0f172a; }
-      .snap-dl small { color: #94a3b8; font-weight: 400; font-size: 0.8em; }
-      .snap-link { margin: 0.6rem 0 0; font-size: 0.85rem; }
-      .snap-empty { color: #64748b; font-size: 0.9rem; }
-      .how ol { margin-left: 0; padding-left: 1.25rem; }
-      .how a { font-weight: 600; }
-      .latest-posts { margin: 2rem 0; }
-      .latest-posts .post-list { list-style: none; padding: 0; margin: 0.5rem 0; }
-      .latest-posts .post-list li { padding: 0.5rem 0; border-bottom: 1px solid #f1f5f9; }
-      .latest-posts a { display: flex; gap: 0.75rem; text-decoration: none; align-items: baseline; }
-      .latest-posts a:hover .post-title { text-decoration: underline; }
-      .latest-posts .post-date { color: #94a3b8; font-size: 0.8rem; font-family: ui-monospace, monospace; flex-shrink: 0; }
-      .latest-posts .post-title { color: #111827; font-weight: 600; }
-      .waitlist { margin: 2.5rem 0; padding: 1rem 1.25rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
-      .waitlist h2 { margin-top: 0.25rem; }
-      .waitlist-form { display: grid; gap: 0.75rem; }
-      .waitlist-form label > span { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
-      .waitlist-form input[type="email"] { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
-      .waitlist-form fieldset { border: none; padding: 0; margin: 0; }
-      .waitlist-form legend { font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
-      .waitlist-form .radio { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 0.9rem; font-size: 0.9rem; cursor: pointer; }
-      .waitlist-form button { padding: 0.55rem 1rem; background: #0f172a; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; width: fit-content; }
-      .waitlist-form button:hover { background: #334155; }
-      .form-note { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0; }
-      .about-short { margin-top: 2rem; }
-    </style>
 `,
   });
 };
@@ -202,70 +215,104 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
 export const renderAbout = (): string =>
   renderLayout({
     title: "このサイトについて — stock-ai",
-    description: "stock-ai は AI による相場予測の検証記録を公開する個人サイトです。仮想50万円での検証で、売買を勧めるものではありません。",
+    description:
+      "stock-ai は AI による相場予測の検証記録を公開する個人サイトです。仮想50万円での検証で、売買を勧めるものではありません。",
     path: "/about",
     content: `
-    <h1>このサイトについて</h1>
-    <div class="notice">本サイトは仮想50万円での検証です。実売買の推奨ではありません。</div>
+    <section class="hero">
+      <h1>このサイトについて</h1>
+      <div class="notice">本サイトは仮想50万円での検証です。実売買の推奨ではありません。</div>
+    </section>
 
-    <h2>運営</h2>
-    <p>個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が運営する個人サイトです。build in public で開発過程を X に投稿しています。</p>
+    <section class="section">
+      <h2>運営</h2>
+      <p>個人開発者 <a href="https://x.com/jun2000jp" rel="me noopener">@jun2000jp</a> が運営する個人サイトです。build in public で開発過程を X に投稿しています。</p>
+    </section>
 
-    <h2>目的</h2>
-    <p>AI を用いた日本株および FX の相場予測モデルの精度を、過去データと仮想運用の形で記録・公開することが目的です。</p>
+    <section class="section">
+      <h2>目的</h2>
+      <p>AI を用いた日本株および FX の相場予測モデルの精度を、過去データと仮想運用の形で記録・公開することが目的です。</p>
+    </section>
 
-    <h2>検証の内容</h2>
-    <ul>
-      <li><strong>株</strong>: レンジサイクル戦略 (3M安値で種まき/3M高値で収穫) に合致した銘柄を日次でピック。仮想50万円での検証ポートフォリオを公開。</li>
-      <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。TP +30 / SL -20 pips の非対称 R:R で検証。</li>
-    </ul>
+    <section class="section">
+      <h2>検証の内容</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li><strong>株</strong>: レンジサイクル戦略 (3M安値で種まき/3M高値で収穫) に合致した銘柄を日次でピック。仮想50万円での検証ポートフォリオを公開。</li>
+        <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。TP +30 / SL -20 pips の非対称 R:R で検証。</li>
+      </ul>
+    </section>
 
-    <h2>データの出典</h2>
-    <ul>
-      <li>日本株日足: <a href="https://finance.yahoo.co.jp/" rel="noopener">Yahoo! Finance Japan</a> (yahoo-finance2 経由で取得)</li>
-      <li>USDJPY 分足: <a href="https://www.dukascopy.com/" rel="noopener">Dukascopy</a></li>
-    </ul>
+    <section class="section">
+      <h2>データの出典</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>日本株日足: <a href="https://finance.yahoo.co.jp/" rel="noopener">Yahoo! Finance Japan</a> (yahoo-finance2 経由で取得)</li>
+        <li>USDJPY 分足: <a href="https://www.dukascopy.com/" rel="noopener">Dukascopy</a></li>
+      </ul>
+    </section>
 
-    <h2>モデル概要</h2>
-    <ul>
-      <li>株 LSTM 5日先リターン予測 + パターンマッチ (レンジ安値/高値+SMA200方向一致)</li>
-      <li>FX 5-seed MLP アンサンブル + kNN による類似日検索</li>
-      <li>バックテストで勝率と平均リターンを提示</li>
-    </ul>
+    <section class="section">
+      <h2>モデル概要</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>株 LSTM 5日先リターン予測 + パターンマッチ (レンジ安値/高値+SMA200方向一致)</li>
+        <li>FX 5-seed MLP アンサンブル + kNN による類似日検索</li>
+        <li>バックテストで勝率と平均リターンを提示</li>
+      </ul>
+    </section>
 
-    <h2>配信希望の受付 (待ちリスト)</h2>
-    <p>月次レポートや FX 日次ログの配信を予定しています。待ちリストにご登録いただいた方には、配信が始まる前に確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。</p>
-    <p><a href="/#waitlist">トップページの登録フォームへ</a></p>
-    <p>配信停止・データ削除のご依頼、そのほかのご連絡は <a href="/contact">お問い合わせフォーム</a> からお送りください。メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。</p>
+    <section class="section">
+      <h2>配信希望の受付 (待ちリスト)</h2>
+      <p>月次レポートや FX 日次ログの配信を予定しています。待ちリストにご登録いただいた方には、配信が始まる前に確認メールをお送りします。確認ボタンを押していただいた方にのみ本配信を行います。</p>
+      <p class="mt-2"><a href="/#waitlist" class="btn btn-outline">トップページの登録フォームへ</a></p>
+      <p class="mt-4 text-sm">
+        配信停止・データ削除のご依頼、そのほかのご連絡は <a href="/contact">お問い合わせフォーム</a> からお送りください。
+        メールアドレスは配信以外の目的で使用せず、第三者に提供することもありません。
+        詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+      </p>
+    </section>
 `,
   });
 
 export const renderDisclaimer = (): string =>
   renderLayout({
     title: "免責事項 — stock-ai",
-    description: "stock-ai の免責事項。本サイトは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。",
+    description:
+      "stock-ai の免責事項。本サイトは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。",
     path: "/disclaimer",
     content: `
-    <h1>免責事項</h1>
-    <div class="notice">本サイトは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。投資判断はご自身の責任でお願いします。</div>
+    <section class="hero">
+      <h1>免責事項</h1>
+      <div class="notice">本サイトは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。投資判断はご自身の責任でお願いします。</div>
+    </section>
 
-    <h2>1. 情報の性質</h2>
-    <p>本サイトおよびメール配信で提供される情報は、過去の相場データと機械学習モデルによる分析結果の共有を目的としています。<strong>特定の金融商品の売買を推奨するもの、投資助言を行うものではありません。</strong></p>
+    <section class="section">
+      <h2>1. 情報の性質</h2>
+      <p>本サイトおよびメール配信で提供される情報は、過去の相場データと機械学習モデルによる分析結果の共有を目的としています。<strong>特定の金融商品の売買を推奨するもの、投資助言を行うものではありません。</strong></p>
+    </section>
 
-    <h2>2. 投資助言業ではないこと</h2>
-    <p>運営者は金融商品取引業の登録を受けていません。本サイトは一切の投資助言サービスを提供しません。</p>
+    <section class="section">
+      <h2>2. 投資助言業ではないこと</h2>
+      <p>運営者は金融商品取引業の登録を受けていません。本サイトは一切の投資助言サービスを提供しません。</p>
+    </section>
 
-    <h2>3. 検証について</h2>
-    <p>サイト内の「ポートフォリオ」および「FX」に表示される損益・成績は、すべて<strong>仮想50万円を使った検証</strong>によるものであり、実際の売買を行った結果ではありません。</p>
+    <section class="section">
+      <h2>3. 検証について</h2>
+      <p>サイト内の「ポートフォリオ」および「FX」に表示される損益・成績は、すべて<strong>仮想50万円を使った検証</strong>によるものであり、実際の売買を行った結果ではありません。</p>
+    </section>
 
-    <h2>4. 情報の正確性・完全性</h2>
-    <p>情報の正確性・完全性・有用性について、運営者は一切の保証を行いません。元データ提供元の仕様変更やバグ、通信障害等により情報が欠落・遅延することがあります。</p>
+    <section class="section">
+      <h2>4. 情報の正確性・完全性</h2>
+      <p>情報の正確性・完全性・有用性について、運営者は一切の保証を行いません。元データ提供元の仕様変更やバグ、通信障害等により情報が欠落・遅延することがあります。</p>
+    </section>
 
-    <h2>5. 損害の免責</h2>
-    <p>本サイトおよびメール配信の情報を利用したこと、または利用できなかったことに起因するいかなる損害についても、運営者は責任を負いません。</p>
+    <section class="section">
+      <h2>5. 損害の免責</h2>
+      <p>本サイトおよびメール配信の情報を利用したこと、または利用できなかったことに起因するいかなる損害についても、運営者は責任を負いません。</p>
+    </section>
 
-    <h2>6. 変更について</h2>
-    <p>本免責事項は予告なく変更されることがあります。</p>
+    <section class="section">
+      <h2>6. 変更について</h2>
+      <p>本免責事項は予告なく変更されることがあります。</p>
+    </section>
 `,
   });
 
@@ -282,52 +329,47 @@ export const renderContactForm = (errorMessage?: string): string =>
     description: "stock-ai への問い合わせ、配信停止、不具合報告はこちらからお送りください。",
     path: "/contact",
     content: `
-    <h1>お問い合わせ</h1>
-    <p>
-      stock-ai へのご質問、配信停止・データ削除のご依頼、不具合報告はこちらのフォームからお送りください。
-      ご返信は入力いただいたメールアドレス宛に行います。
-    </p>
-    ${errorMessage ? `<div class="notice">${htmlEscape(errorMessage)}</div>` : ""}
-    <form method="post" action="/api/contact" class="contact-form">
-      <label>
-        <span>メールアドレス (返信先)</span>
-        <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" maxlength="254" />
-      </label>
-      <label>
-        <span>種別</span>
-        <select name="category" required>
-          ${CONTACT_CATEGORIES.map(
-            (c) => `<option value="${htmlEscape(c.value)}">${htmlEscape(c.label)}</option>`,
-          ).join("")}
-        </select>
-      </label>
-      <label>
-        <span>内容</span>
-        <textarea name="message" required rows="6" maxlength="4000" placeholder="お問い合わせ内容をご記入ください"></textarea>
-      </label>
-      <div class="hp" aria-hidden="true">
-        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
-      </div>
-      <button type="submit">送信</button>
-      <p class="form-note">
-        送信いただいた内容とメールアドレスは返信目的でのみ使用し、第三者に提供することはありません。
-        詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+    <section class="hero">
+      <h1>お問い合わせ</h1>
+      <p class="lead">
+        stock-ai へのご質問、配信停止・データ削除のご依頼、不具合報告はこちらのフォームからお送りください。
+        ご返信は入力いただいたメールアドレス宛に行います。
       </p>
-    </form>
+    </section>
 
-    <style>
-      .contact-form { display: grid; gap: 0.9rem; max-width: 540px; }
-      .contact-form label { display: block; }
-      .contact-form label > span { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 0.25rem; }
-      .contact-form input[type="email"], .contact-form select, .contact-form textarea {
-        width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; box-sizing: border-box; font-family: inherit;
-      }
-      .contact-form textarea { resize: vertical; min-height: 140px; }
-      .contact-form button { padding: 0.55rem 1.25rem; background: #0f172a; color: #fff; border: none; border-radius: 6px; font-size: 0.95rem; cursor: pointer; width: fit-content; }
-      .contact-form button:hover { background: #334155; }
-      .contact-form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-      .form-note { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0; }
-    </style>
+    ${errorMessage ? `<div class="notice-strip">${htmlEscape(errorMessage)}</div>` : ""}
+
+    <section class="section">
+      <div class="card-soft">
+        <form method="post" action="/api/contact" class="form-block">
+          <label>
+            <span>メールアドレス (返信先)</span>
+            <input type="email" name="email" required placeholder="you@example.com" autocomplete="email" maxlength="254" />
+          </label>
+          <label>
+            <span>種別</span>
+            <select name="category" required>
+              ${CONTACT_CATEGORIES.map(
+                (c) =>
+                  `<option value="${htmlEscape(c.value)}">${htmlEscape(c.label)}</option>`,
+              ).join("")}
+            </select>
+          </label>
+          <label>
+            <span>内容</span>
+            <textarea name="message" required rows="6" maxlength="4000" placeholder="お問い合わせ内容をご記入ください"></textarea>
+          </label>
+          <div class="hp" aria-hidden="true">
+            <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+          </div>
+          <button type="submit" class="btn">送信</button>
+          <p class="form-note">
+            送信いただいた内容とメールアドレスは返信目的でのみ使用し、第三者に提供することはありません。
+            詳細は <a href="/privacy">プライバシーポリシー</a> をご覧ください。
+          </p>
+        </form>
+      </div>
+    </section>
 `,
   });
 
@@ -337,9 +379,11 @@ export const renderContactThanks = (): string =>
     description: "お問い合わせを受け付けました。",
     path: "/contact/thanks",
     content: `
-    <h1>お問い合わせを受け付けました</h1>
-    <p>内容を確認のうえ、ご入力いただいたメールアドレス宛にご返信いたします。少々お時間をいただく場合があります。</p>
-    <p><a href="/">トップへ戻る</a></p>
+    <section class="hero">
+      <h1>お問い合わせを受け付けました</h1>
+      <p class="lead">内容を確認のうえ、ご入力いただいたメールアドレス宛にご返信いたします。少々お時間をいただく場合があります。</p>
+    </section>
+    <p><a href="/" class="btn btn-outline">トップへ戻る</a></p>
 `,
   });
 
@@ -352,39 +396,41 @@ export type ContactsAdminRow = {
   repliedAt: number | null;
 };
 
+const fmtTsJst = (t: number): string => {
+  const d = new Date(t * 1000);
+  const jst = new Date(d.getTime() + 9 * 3600 * 1000);
+  return (
+    jst.getUTCFullYear() +
+    "-" +
+    String(jst.getUTCMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(jst.getUTCDate()).padStart(2, "0") +
+    " " +
+    String(jst.getUTCHours()).padStart(2, "0") +
+    ":" +
+    String(jst.getUTCMinutes()).padStart(2, "0")
+  );
+};
+
 export const renderContactsAdmin = (
   counts: { total: number; unreplied: number },
   rows: ContactsAdminRow[],
 ): string => {
-  const fmtTs = (t: number): string => {
-    const d = new Date(t * 1000);
-    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
-    return (
-      jst.getUTCFullYear() +
-      "-" +
-      String(jst.getUTCMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(jst.getUTCDate()).padStart(2, "0") +
-      " " +
-      String(jst.getUTCHours()).padStart(2, "0") +
-      ":" +
-      String(jst.getUTCMinutes()).padStart(2, "0")
-    );
-  };
-
   const items = rows
     .map(
       (r) => `
-      <article class="contact-row">
-        <header>
-          <span class="meta">#${r.id} · ${htmlEscape(r.category)} · ${htmlEscape(fmtTs(r.addedAt))}</span>
-          <span class="meta ${r.repliedAt ? "replied" : "unreplied"}">${r.repliedAt ? `返信済 ${htmlEscape(fmtTs(r.repliedAt))}` : "未返信"}</span>
-          <form method="post" action="/admin/contacts/${r.id}/delete" onsubmit="return confirm('この問い合わせを削除しますか?');" style="margin:0;">
-            <button class="btn-del">削除</button>
-          </form>
+      <article class="card mb-3">
+        <header class="flex justify-between flex-wrap gap-2 mb-2">
+          <span class="text-xs text-[color:var(--color-muted)] font-mono">#${r.id} · ${htmlEscape(r.category)} · ${htmlEscape(fmtTsJst(r.addedAt))}</span>
+          <div class="flex items-center gap-3">
+            <span class="badge ${r.repliedAt ? "win" : "loss"}">${r.repliedAt ? `返信済 ${htmlEscape(fmtTsJst(r.repliedAt))}` : "未返信"}</span>
+            <form method="post" action="/admin/contacts/${r.id}/delete" onsubmit="return confirm('この問い合わせを削除しますか?');" style="margin:0;">
+              <button class="btn-del">削除</button>
+            </form>
+          </div>
         </header>
-        <p class="email"><a href="mailto:${htmlEscape(r.email)}">${htmlEscape(r.email)}</a></p>
-        <pre class="message">${htmlEscape(r.message)}</pre>
+        <p class="text-sm m-0 mb-2"><a href="mailto:${htmlEscape(r.email)}">${htmlEscape(r.email)}</a></p>
+        <pre class="whitespace-pre-wrap font-sans text-sm bg-[color:var(--color-surface-soft)] p-3 rounded m-0">${htmlEscape(r.message)}</pre>
       </article>`,
     )
     .join("");
@@ -394,30 +440,16 @@ export const renderContactsAdmin = (
     description: "contacts admin",
     path: "/admin/contacts",
     content: `
-    <h1>問い合わせ管理</h1>
-    <section class="counts">
-      <dl>
-        <dt>合計</dt><dd>${counts.total}</dd>
-        <dt>未返信</dt><dd>${counts.unreplied}</dd>
-      </dl>
+    <section class="hero">
+      <h1>問い合わせ管理</h1>
     </section>
-    <section class="list">
-      ${items || `<p style="color:#94a3b8;">問い合わせはまだありません。</p>`}
+    <section class="section">
+      <div class="stat-grid mb-4">
+        <div class="stat"><span class="label">合計</span><span class="value">${counts.total}</span></div>
+        <div class="stat"><span class="label">未返信</span><span class="value ${counts.unreplied > 0 ? "neg" : ""}">${counts.unreplied}</span></div>
+      </div>
+      ${items || `<p class="text-[color:var(--color-muted-soft)]">問い合わせはまだありません。</p>`}
     </section>
-    <style>
-      .counts dl { display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; font-size: 0.9rem; margin: 0 0 1rem; }
-      .counts dt { color: #64748b; }
-      .counts dd { margin: 0; font-weight: 600; }
-      .contact-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; background: #fff; }
-      .contact-row header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
-      .contact-row .meta { font-size: 0.78rem; color: #64748b; font-family: ui-monospace, monospace; }
-      .contact-row .meta.unreplied { color: #b91c1c; font-weight: 600; }
-      .contact-row .meta.replied { color: #047857; }
-      .contact-row .email { margin: 0.25rem 0; font-size: 0.9rem; }
-      .contact-row .message { background: #f8fafc; padding: 0.5rem 0.75rem; border-radius: 4px; font-family: inherit; white-space: pre-wrap; margin: 0.4rem 0 0; font-size: 0.9rem; }
-      .btn-del { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.75rem; cursor: pointer; }
-      .btn-del:hover { background: #fecaca; }
-    </style>
 `,
   });
 };
@@ -428,14 +460,16 @@ export const renderWaitlistThanks = (status: "added" | "already"): string =>
     description: "待ちリストにご登録いただきありがとうございます。",
     path: "/waitlist/thanks",
     content: `
-    <h1>登録を受け付けました</h1>
-    ${
-      status === "added"
-        ? `<p>待ちリストへのご登録ありがとうございます。配信が始まる前に、確認メールをお送りします。</p>`
-        : `<p>このメールアドレスはすでに登録されています。重ねての登録は行っていません。</p>`
-    }
-    <p><strong>配信開始時期は未定です。</strong> 準備が整い次第、ご登録のアドレスに確認メールをお送りします。</p>
-    <p><a href="/">トップへ戻る</a></p>
+    <section class="hero">
+      <h1>登録を受け付けました</h1>
+      ${
+        status === "added"
+          ? `<p class="lead">待ちリストへのご登録ありがとうございます。配信が始まる前に、確認メールをお送りします。</p>`
+          : `<p class="lead">このメールアドレスはすでに登録されています。重ねての登録は行っていません。</p>`
+      }
+      <p class="text-sm text-[color:var(--color-muted)] mt-2"><strong>配信開始時期は未定です。</strong> 準備が整い次第、ご登録のアドレスに確認メールをお送りします。</p>
+    </section>
+    <p><a href="/" class="btn btn-outline">トップへ戻る</a></p>
 `,
   });
 
@@ -445,9 +479,11 @@ export const renderWaitlistError = (message: string): string =>
     description: "待ちリスト登録でエラーが発生しました。",
     path: "/waitlist/error",
     content: `
-    <h1>登録できませんでした</h1>
-    <p>${htmlEscape(message)}</p>
-    <p><a href="/#waitlist">フォームに戻る</a></p>
+    <section class="hero">
+      <h1>登録できませんでした</h1>
+      <p class="lead">${htmlEscape(message)}</p>
+    </section>
+    <p><a href="/#waitlist" class="btn btn-outline">フォームに戻る</a></p>
 `,
   });
 
@@ -461,36 +497,27 @@ export type WaitlistAdminRow = {
 };
 
 export const renderWaitlistAdmin = (
-  counts: { total: number; fx: number; stocks: number; both: number; confirmed: number; unsubscribed: number },
+  counts: {
+    total: number;
+    fx: number;
+    stocks: number;
+    both: number;
+    confirmed: number;
+    unsubscribed: number;
+  },
   rows: WaitlistAdminRow[],
 ): string => {
-  const fmtTs = (t: number): string => {
-    const d = new Date(t * 1000);
-    const jst = new Date(d.getTime() + 9 * 3600 * 1000);
-    return (
-      jst.getUTCFullYear() +
-      "-" +
-      String(jst.getUTCMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(jst.getUTCDate()).padStart(2, "0") +
-      " " +
-      String(jst.getUTCHours()).padStart(2, "0") +
-      ":" +
-      String(jst.getUTCMinutes()).padStart(2, "0")
-    );
-  };
-
   const items = rows
     .map(
       (r) => `
       <tr>
-        <td>${r.id}</td>
-        <td>${htmlEscape(r.email)}</td>
-        <td>${htmlEscape(r.category)}</td>
-        <td>${htmlEscape(fmtTs(r.addedAt))}</td>
-        <td>${r.confirmedAt ? htmlEscape(fmtTs(r.confirmedAt)) : "—"}</td>
-        <td>${r.unsubscribedAt ? htmlEscape(fmtTs(r.unsubscribedAt)) : "—"}</td>
-        <td><form method="post" action="/admin/waitlist/${r.id}/delete" onsubmit="return confirm('${htmlEscape(r.email)} を削除しますか?');"><button class="btn-del">削除</button></form></td>
+        <td class="p-2">${r.id}</td>
+        <td class="p-2">${htmlEscape(r.email)}</td>
+        <td class="p-2">${htmlEscape(r.category)}</td>
+        <td class="p-2 font-mono text-xs">${htmlEscape(fmtTsJst(r.addedAt))}</td>
+        <td class="p-2 font-mono text-xs">${r.confirmedAt ? htmlEscape(fmtTsJst(r.confirmedAt)) : "—"}</td>
+        <td class="p-2 font-mono text-xs">${r.unsubscribedAt ? htmlEscape(fmtTsJst(r.unsubscribedAt)) : "—"}</td>
+        <td class="p-2"><form method="post" action="/admin/waitlist/${r.id}/delete" onsubmit="return confirm('${htmlEscape(r.email)} を削除しますか?');"><button class="btn-del">削除</button></form></td>
       </tr>`,
     )
     .join("");
@@ -500,41 +527,36 @@ export const renderWaitlistAdmin = (
     description: "waitlist admin",
     path: "/admin/waitlist",
     content: `
-    <h1>待ちリスト管理</h1>
-    <section class="counts">
-      <h2>件数</h2>
-      <dl>
-        <dt>合計</dt><dd>${counts.total}</dd>
-        <dt>FX のみ</dt><dd>${counts.fx}</dd>
-        <dt>株のみ</dt><dd>${counts.stocks}</dd>
-        <dt>両方</dt><dd>${counts.both}</dd>
-        <dt>確認済み</dt><dd>${counts.confirmed}</dd>
-        <dt>配信停止</dt><dd>${counts.unsubscribed}</dd>
-      </dl>
-      <p class="hint">目安: 100件を超えたら Resend Pro ($20/月) 検討。それまでは送信コスト不要。</p>
+    <section class="hero">
+      <h1>待ちリスト管理</h1>
     </section>
-    <section class="recent">
-      <h2>直近の登録 (最新 100 件)</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th><th>Email</th><th>Category</th><th>登録 (JST)</th><th>確認済み</th><th>解除</th><th></th>
-          </tr>
-        </thead>
-        <tbody>${items || `<tr><td colspan="7" style="text-align:center;color:#94a3b8;">登録なし</td></tr>`}</tbody>
-      </table>
+    <section class="section">
+      <div class="stat-grid mb-4">
+        <div class="stat"><span class="label">合計</span><span class="value">${counts.total}</span></div>
+        <div class="stat"><span class="label">確認済み</span><span class="value">${counts.confirmed}</span></div>
+        <div class="stat"><span class="label">FX のみ</span><span class="value sm">${counts.fx}</span></div>
+        <div class="stat"><span class="label">株のみ</span><span class="value sm">${counts.stocks}</span></div>
+        <div class="stat"><span class="label">両方</span><span class="value sm">${counts.both}</span></div>
+        <div class="stat"><span class="label">配信停止</span><span class="value sm">${counts.unsubscribed}</span></div>
+      </div>
+      <p class="text-xs text-[color:var(--color-muted)] mb-3">目安: 100件を超えたら Resend Pro ($20/月) 検討。それまでは送信コスト不要。</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="bg-[color:var(--color-surface-soft)] text-[color:var(--color-muted)] text-xs">
+              <th class="p-2 text-left">ID</th>
+              <th class="p-2 text-left">Email</th>
+              <th class="p-2 text-left">Category</th>
+              <th class="p-2 text-left">登録 (JST)</th>
+              <th class="p-2 text-left">確認済み</th>
+              <th class="p-2 text-left">解除</th>
+              <th class="p-2"></th>
+            </tr>
+          </thead>
+          <tbody>${items || `<tr><td colspan="7" class="text-center text-[color:var(--color-muted-soft)] p-4">登録なし</td></tr>`}</tbody>
+        </table>
+      </div>
     </section>
-    <style>
-      .counts dl { display: grid; grid-template-columns: auto auto; gap: 0.3rem 1rem; font-size: 0.9rem; }
-      .counts dt { color: #64748b; }
-      .counts dd { margin: 0; font-weight: 600; }
-      .counts .hint { color: #64748b; font-size: 0.8rem; margin-top: 0.75rem; }
-      table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
-      th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
-      th { background: #f8fafc; color: #475569; font-size: 0.78rem; }
-      .btn-del { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.75rem; cursor: pointer; }
-      .btn-del:hover { background: #fecaca; }
-    </style>
 `,
   });
 };
@@ -542,36 +564,53 @@ export const renderWaitlistAdmin = (
 export const renderPrivacy = (): string =>
   renderLayout({
     title: "プライバシーポリシー — stock-ai",
-    description: "stock-ai のプライバシーポリシー。収集するのはメール配信希望者のメールアドレスのみで、第三者提供は行いません。",
+    description:
+      "stock-ai のプライバシーポリシー。収集するのはメール配信希望者のメールアドレスのみで、第三者提供は行いません。",
     path: "/privacy",
     content: `
-    <h1>プライバシーポリシー</h1>
+    <section class="hero">
+      <h1>プライバシーポリシー</h1>
+    </section>
 
-    <h2>1. 収集する情報</h2>
-    <ul>
-      <li><strong>メール配信希望者のメールアドレス</strong>: FX 検証ログの配信をご希望いただいた方のメールアドレスのみを保管します。</li>
-      <li>サーバログ (IP アドレス、ユーザーエージェント等): Cloudflare のインフラ標準ログに準じて記録されます。</li>
-    </ul>
+    <section class="section">
+      <h2>1. 収集する情報</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li><strong>メール配信希望者のメールアドレス</strong>: FX 検証ログの配信をご希望いただいた方のメールアドレスのみを保管します。</li>
+        <li>サーバログ (IP アドレス、ユーザーエージェント等): Cloudflare のインフラ標準ログに準じて記録されます。</li>
+      </ul>
+    </section>
 
-    <h2>2. 利用目的</h2>
-    <ul>
-      <li>FX 検証ログメールの配信</li>
-      <li>サイト運営・不正アクセス対策</li>
-    </ul>
+    <section class="section">
+      <h2>2. 利用目的</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>FX 検証ログメールの配信</li>
+        <li>サイト運営・不正アクセス対策</li>
+      </ul>
+    </section>
 
-    <h2>3. 保管場所</h2>
-    <p>メールアドレスは Cloudflare D1 (Workers のデータベース) に保管し、メール送信には <a href="https://resend.com/" rel="noopener">Resend</a> を利用します。両者ともに業界標準のセキュリティ対策を講じています。</p>
+    <section class="section">
+      <h2>3. 保管場所</h2>
+      <p>メールアドレスは Cloudflare D1 (Workers のデータベース) に保管し、メール送信には <a href="https://resend.com/" rel="noopener">Resend</a> を利用します。両者ともに業界標準のセキュリティ対策を講じています。</p>
+    </section>
 
-    <h2>4. 第三者提供</h2>
-    <p>法令に基づく場合を除き、第三者にメールアドレスを提供することはありません。</p>
+    <section class="section">
+      <h2>4. 第三者提供</h2>
+      <p>法令に基づく場合を除き、第三者にメールアドレスを提供することはありません。</p>
+    </section>
 
-    <h2>5. 配信停止・削除</h2>
-    <p>配信停止・データ削除をご希望の方は、<a href="/contact">お問い合わせフォーム</a> からご連絡ください。速やかに対応します。</p>
+    <section class="section">
+      <h2>5. 配信停止・削除</h2>
+      <p>配信停止・データ削除をご希望の方は、<a href="/contact">お問い合わせフォーム</a> からご連絡ください。速やかに対応します。</p>
+    </section>
 
-    <h2>6. Cookie</h2>
-    <p>オーナーのログイン状態を保持するためだけに、HttpOnly / Secure / SameSite=Strict の Cookie を 1 つ利用します。アクセス解析用の Cookie やサードパーティ Cookie は使用していません。</p>
+    <section class="section">
+      <h2>6. Cookie</h2>
+      <p>オーナーのログイン状態を保持するためだけに、HttpOnly / Secure / SameSite=Strict の Cookie を 1 つ利用します。アクセス解析用の Cookie やサードパーティ Cookie は使用していません。</p>
+    </section>
 
-    <h2>7. 変更について</h2>
-    <p>本ポリシーは予告なく変更されることがあります。重要な変更はサイト上で告知します。</p>
+    <section class="section">
+      <h2>7. 変更について</h2>
+      <p>本ポリシーは予告なく変更されることがあります。重要な変更はサイト上で告知します。</p>
+    </section>
 `,
   });

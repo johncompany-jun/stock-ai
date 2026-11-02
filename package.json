@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "dev": "concurrently -k -n css,vite -c cyan,magenta \"bun run css:watch\" \"vite\"",
+    "css:build": "tailwindcss -i ./src/styles.css -o ./public/styles.css --minify",
+    "css:watch": "tailwindcss -i ./src/styles.css -o ./public/styles.css --watch",
+    "build": "bun run css:build && vue-tsc --noEmit && vite build",
     "preview": "wrangler dev",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "bun run build && wrangler deploy",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
@@ -22,8 +24,11 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
     "@hono/vite-dev-server": "^0.18.1",
+    "@tailwindcss/cli": "^4.3.3",
     "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^10.0.6",
     "drizzle-kit": "^0.31.10",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vue-tsc": "^2.2.0",
