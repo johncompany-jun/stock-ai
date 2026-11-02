@@ -12,6 +12,9 @@ import gotoubiAnomalyCheck from "../../content/blog/gotoubi-anomaly-check.md";
 import howThisSiteIsBuilt from "../../content/blog/how-this-site-is-built.md";
 import monthlyReview202610 from "../../content/blog/2026-10-monthly-review.md";
 import candidateStocks202611 from "../../content/blog/2026-11-candidate-stocks.md";
+import stockBrokerComparison100k from "../../content/blog/stock-broker-comparison-100k.md";
+import fxBrokerSmallLot from "../../content/blog/fx-broker-small-lot.md";
+import nisaBrokerSelection from "../../content/blog/nisa-broker-selection.md";
 
 export const RAW_POSTS: Record<string, string> = {
   "hello-stock-ai": helloStockAi,
@@ -28,4 +31,7 @@ export const RAW_POSTS: Record<string, string> = {
   "how-this-site-is-built": howThisSiteIsBuilt,
   "2026-10-monthly-review": monthlyReview202610,
   "2026-11-candidate-stocks": candidateStocks202611,
+  "stock-broker-comparison-100k": stockBrokerComparison100k,
+  "fx-broker-small-lot": fxBrokerSmallLot,
+  "nisa-broker-selection": nisaBrokerSelection,
 };

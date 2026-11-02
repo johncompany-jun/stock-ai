@@ -176,6 +176,34 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
         : ""
     }
 
+    <section class="section" id="start">
+      <h2>このサイトの検証を自分でも試したい方へ</h2>
+      <p class="text-sm mb-4">
+        掲載している株・FX の戦略を自分でも試すには、国内の証券口座 (株) か FX 口座が必要です。
+        目的別に 3 本のガイド記事を用意しているので、まずはこちらから。
+      </p>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <a href="/blog/stock-broker-comparison-100k" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (通常口座)</div>
+          <div class="font-semibold mb-1">10 万円で始める日本株</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">レンジサイクル実践用に、ネット証券 4 社を手数料・ツール・NISA 対応で比較。</p>
+        </a>
+        <a href="/blog/nisa-broker-selection" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (NISA)</div>
+          <div class="font-semibold mb-1">NISA で非課税で始めたい方</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">年間 240 万円の成長投資枠で、売却益がまるごと非課税になる使い方。</p>
+        </a>
+        <a href="/blog/fx-broker-small-lot" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">FX</div>
+          <div class="font-semibold mb-1">1,000 通貨から始める FX</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">月数百円の動きから練習できる、少額対応の FX 口座をまとめました。</p>
+        </a>
+      </div>
+      <p class="mt-3 text-xs text-[color:var(--color-muted)]">
+        口座開設はまだ先、という方は、下記の待ちリストにご登録いただくと配信開始時にお知らせします。
+      </p>
+    </section>
+
     <section class="section" id="waitlist">
       <h2>検証ログの配信を受け取る (待ちリスト)</h2>
       <div class="card-soft">
