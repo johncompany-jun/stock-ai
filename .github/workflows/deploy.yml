@@ -37,8 +37,8 @@ jobs:
           bunx wrangler d1 execute stock-ai --remote --file=drizzle/0015_add_waitlist.sql
           bunx wrangler d1 execute stock-ai --remote --file=drizzle/0016_add_contacts.sql
 
-      - name: Build client
-        run: bunx vite build
+      - name: Build client (Tailwind CSS + Vite)
+        run: bun run build
 
       - name: Deploy to Cloudflare Workers
         run: bunx wrangler deploy
