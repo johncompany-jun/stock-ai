@@ -42,11 +42,64 @@ export const listPostMeta = (): Array<Omit<BlogPost, "body">> =>
 
 const marked = new Marked({ gfm: true, breaks: false });
 
+const CATEGORIES: Array<{ slug: string; label: string; description: string }> = [
+  { slug: "stock", label: "日本株", description: "レンジサイクル戦略・季節性・低位株の教育記事" },
+  { slug: "fx", label: "FX (USD/JPY)", description: "モデル構築・特徴量・実運用ルール" },
+  { slug: "broker", label: "口座・サービス比較", description: "証券口座・FX 口座・NISA の選び方" },
+  { slug: "strategy", label: "戦略・検証", description: "方法論・バックテストの罠・ポートフォリオ設計" },
+  { slug: "dev", label: "開発ログ・運営", description: "サイト構成・コスト・月次振り返り" },
+];
+
+const CATEGORY_OF: Record<string, string> = {
+  "range-cycle-backtest-1235": "stock",
+  "stock-seasonality-september": "stock",
+  "low-price-stock-range-cycle": "stock",
+  "sma-touch-strategy-3-patterns": "stock",
+  "golden-cross-why-slow": "stock",
+  "no-margin-trading": "stock",
+  "2026-11-candidate-stocks": "stock",
+  "weekly-pick-01-klab-review": "stock",
+  "ipo-exclusion-rule": "stock",
+  "fx-model-build-review": "fx",
+  "gotoubi-anomaly-check": "fx",
+  "knn-similar-day-prediction": "fx",
+  "5-seed-average": "fx",
+  "1man-yen-usdjpy-start": "fx",
+  "stoploss-20pips-fixed": "fx",
+  "stock-broker-comparison-100k": "broker",
+  "nisa-broker-selection": "broker",
+  "fx-broker-small-lot": "broker",
+  "stock-model-collapse-2026-10": "strategy",
+  "backtest-5-pitfalls": "strategy",
+  "stock-fx-two-wheels": "strategy",
+  "hello-stock-ai": "dev",
+  "ai-server-pick-failure": "dev",
+  "monthly-cost-breakdown": "dev",
+  "how-this-site-is-built": "dev",
+  "2026-10-monthly-review": "dev",
+  "cloudflare-d1-workers-zero-cost": "dev",
+};
+
 export const renderBlogIndex = (): string => {
   const posts = listPostMeta();
-  const items = posts
-    .map(
-      (p) => `
+  const byCategory = new Map<string, typeof posts>();
+  for (const p of posts) {
+    const cat = CATEGORY_OF[p.slug] ?? "dev";
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(p);
+  }
+
+  const toc = CATEGORIES.map((c) => {
+    const n = byCategory.get(c.slug)?.length ?? 0;
+    return `<a href="#cat-${c.slug}" class="btn btn-outline text-sm">${htmlEscape(c.label)} <span class="text-xs text-[color:var(--color-muted-soft)]">(${n})</span></a>`;
+  }).join("");
+
+  const sections = CATEGORIES.map((c) => {
+    const list = byCategory.get(c.slug) ?? [];
+    if (list.length === 0) return "";
+    const items = list
+      .map(
+        (p) => `
       <li>
         <a href="/blog/${htmlEscape(p.slug)}">
           <span class="post-date">${htmlEscape(p.date)}</span>
@@ -54,20 +107,27 @@ export const renderBlogIndex = (): string => {
           ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
         </a>
       </li>`,
-    )
-    .join("\n");
+      )
+      .join("\n");
+    return `
+    <section class="section" id="cat-${c.slug}">
+      <h2>${htmlEscape(c.label)} <span class="text-sm font-normal text-[color:var(--color-muted-soft)]">(${list.length})</span></h2>
+      <p class="text-sm text-[color:var(--color-muted)] mb-3">${htmlEscape(c.description)}</p>
+      <ul class="post-list">${items}</ul>
+    </section>`;
+  }).join("\n");
+
   return renderLayout({
     title: "ブログ — stock-ai",
-    description: "stock-ai の開発ログと、モデル改善・検証結果の記録。",
+    description: "stock-ai の開発ログと、モデル改善・検証結果の記録。日本株・FX・口座比較・開発ログの 4 カテゴリに整理。",
     path: "/blog/",
     content: `
     <section class="hero">
       <h1>ブログ</h1>
       <p class="lead">開発ログと、モデル改善・検証結果の記録です。</p>
+      <div class="flex flex-wrap gap-2 mt-4">${toc}</div>
     </section>
-    <section class="section">
-      <ul class="post-list">${items}</ul>
-    </section>
+    ${sections}
 `,
   });
 };
