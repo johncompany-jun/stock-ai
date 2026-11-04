@@ -80,6 +80,28 @@ const CATEGORY_OF: Record<string, string> = {
   "cloudflare-d1-workers-zero-cost": "dev",
 };
 
+const POSTS_PER_CATEGORY_ON_INDEX = 5;
+const POSTS_PER_PAGE = 10;
+
+const postsOfCategory = (slug: string): Array<Omit<BlogPost, "body">> =>
+  listPostMeta().filter((p) => (CATEGORY_OF[p.slug] ?? "dev") === slug);
+
+export const listCategorySlugs = (): string[] => CATEGORIES.map((c) => c.slug);
+
+export const categoryPageCount = (slug: string): number => {
+  const n = postsOfCategory(slug).length;
+  return Math.max(1, Math.ceil(n / POSTS_PER_PAGE));
+};
+
+const renderPostListItem = (p: Omit<BlogPost, "body">): string => `
+      <li>
+        <a href="/blog/${htmlEscape(p.slug)}">
+          <span class="post-date">${htmlEscape(p.date)}</span>
+          <span class="post-title">${htmlEscape(p.title)}</span>
+          ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
+        </a>
+      </li>`;
+
 export const renderBlogIndex = (): string => {
   const posts = listPostMeta();
   const byCategory = new Map<string, typeof posts>();
@@ -97,29 +119,24 @@ export const renderBlogIndex = (): string => {
   const sections = CATEGORIES.map((c) => {
     const list = byCategory.get(c.slug) ?? [];
     if (list.length === 0) return "";
-    const items = list
-      .map(
-        (p) => `
-      <li>
-        <a href="/blog/${htmlEscape(p.slug)}">
-          <span class="post-date">${htmlEscape(p.date)}</span>
-          <span class="post-title">${htmlEscape(p.title)}</span>
-          ${p.description ? `<p class="post-desc">${htmlEscape(p.description)}</p>` : ""}
-        </a>
-      </li>`,
-      )
-      .join("\n");
+    const head = list.slice(0, POSTS_PER_CATEGORY_ON_INDEX);
+    const items = head.map(renderPostListItem).join("\n");
+    const more =
+      list.length > POSTS_PER_CATEGORY_ON_INDEX
+        ? `<p class="mt-3"><a href="/blog/category/${c.slug}" class="btn btn-outline text-sm">${htmlEscape(c.label)}の記事をすべて見る (${list.length} 本) →</a></p>`
+        : "";
     return `
     <section class="section" id="cat-${c.slug}">
-      <h2>${htmlEscape(c.label)} <span class="text-sm font-normal text-[color:var(--color-muted-soft)]">(${list.length})</span></h2>
+      <h2><a href="/blog/category/${c.slug}" class="no-underline hover:underline">${htmlEscape(c.label)}</a> <span class="text-sm font-normal text-[color:var(--color-muted-soft)]">(${list.length})</span></h2>
       <p class="text-sm text-[color:var(--color-muted)] mb-3">${htmlEscape(c.description)}</p>
       <ul class="post-list">${items}</ul>
+      ${more}
     </section>`;
   }).join("\n");
 
   return renderLayout({
     title: "ブログ — stock-ai",
-    description: "stock-ai の開発ログと、モデル改善・検証結果の記録。日本株・FX・口座比較・開発ログの 4 カテゴリに整理。",
+    description: "stock-ai の開発ログと、モデル改善・検証結果の記録。日本株・FX・口座比較・戦略検証・開発ログの 5 カテゴリに整理。",
     path: "/blog/",
     content: `
     <section class="hero">
@@ -128,6 +145,62 @@ export const renderBlogIndex = (): string => {
       <div class="flex flex-wrap gap-2 mt-4">${toc}</div>
     </section>
     ${sections}
+`,
+  });
+};
+
+export const renderCategoryPage = (slug: string, page: number): string | null => {
+  const cat = CATEGORIES.find((c) => c.slug === slug);
+  if (!cat) return null;
+  const list = postsOfCategory(slug);
+  const totalPages = Math.max(1, Math.ceil(list.length / POSTS_PER_PAGE));
+  if (page < 1 || page > totalPages) return null;
+  const start = (page - 1) * POSTS_PER_PAGE;
+  const pageItems = list.slice(start, start + POSTS_PER_PAGE);
+
+  const items = pageItems.map(renderPostListItem).join("\n");
+
+  const baseUrl = `/blog/category/${slug}`;
+  const linkTo = (n: number): string => (n === 1 ? baseUrl : `${baseUrl}/page/${n}`);
+  const prev =
+    page > 1
+      ? `<a href="${linkTo(page - 1)}" class="btn btn-outline text-sm" rel="prev">← 前のページ</a>`
+      : `<span class="btn btn-outline text-sm opacity-50 pointer-events-none">← 前のページ</span>`;
+  const next =
+    page < totalPages
+      ? `<a href="${linkTo(page + 1)}" class="btn btn-outline text-sm" rel="next">次のページ →</a>`
+      : `<span class="btn btn-outline text-sm opacity-50 pointer-events-none">次のページ →</span>`;
+  const nav =
+    totalPages > 1
+      ? `<nav class="flex items-center justify-between mt-6">${prev}<span class="text-sm text-[color:var(--color-muted)]">${page} / ${totalPages}</span>${next}</nav>`
+      : "";
+
+  const otherCats = CATEGORIES.filter((c) => c.slug !== slug)
+    .map(
+      (c) =>
+        `<a href="/blog/category/${c.slug}" class="btn btn-outline text-sm">${htmlEscape(c.label)}</a>`,
+    )
+    .join("");
+
+  const pageSuffix = page > 1 ? ` (${page}/${totalPages})` : "";
+  return renderLayout({
+    title: `${cat.label} — ブログ${pageSuffix} — stock-ai`,
+    description: `${cat.description} — stock-ai ブログの「${cat.label}」カテゴリ (${list.length} 本)。`,
+    path: page === 1 ? `/blog/category/${slug}` : `/blog/category/${slug}/page/${page}`,
+    content: `
+    <section class="hero">
+      <p class="text-xs text-[color:var(--color-muted-soft)] font-mono m-0 mb-2"><a href="/blog/">← ブログ一覧へ</a></p>
+      <h1>${htmlEscape(cat.label)} <span class="text-sm font-normal text-[color:var(--color-muted-soft)]">(${list.length} 本)</span></h1>
+      <p class="lead">${htmlEscape(cat.description)}</p>
+    </section>
+    <section class="section">
+      <ul class="post-list">${items}</ul>
+      ${nav}
+    </section>
+    <section class="section">
+      <h2 class="text-base">他のカテゴリ</h2>
+      <div class="flex flex-wrap gap-2 mt-2">${otherCats}</div>
+    </section>
 `,
   });
 };

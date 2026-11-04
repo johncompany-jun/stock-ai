@@ -25,7 +25,14 @@ import {
   type HomeSnapshot,
   type WaitlistAdminRow,
 } from "./pages";
-import { listPostMeta, renderBlogIndex, renderBlogPost } from "./blog";
+import {
+  categoryPageCount,
+  listCategorySlugs,
+  listPostMeta,
+  renderBlogIndex,
+  renderBlogPost,
+  renderCategoryPage,
+} from "./blog";
 import { renderFxIndex, renderFxLog, renderFxNotFound, type FxLogRow } from "./fx";
 import {
   renderStocksIndex,
@@ -407,6 +414,20 @@ app.get("/fx/log/:date", async (c) => {
 
 app.get("/blog", (c) => c.redirect("/blog/", 301));
 app.get("/blog/", () => htmlResponse(renderBlogIndex()));
+app.get("/blog/category/:slug", (c) => {
+  const html = renderCategoryPage(c.req.param("slug"), 1);
+  if (!html) return htmlResponse("<h1>404</h1><p>カテゴリが見つかりません。</p>", 404);
+  return htmlResponse(html);
+});
+app.get("/blog/category/:slug/page/:page", (c) => {
+  const page = Number(c.req.param("page"));
+  if (!Number.isInteger(page) || page < 1) {
+    return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  }
+  const html = renderCategoryPage(c.req.param("slug"), page);
+  if (!html) return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  return htmlResponse(html);
+});
 app.get("/blog/:slug", (c) => {
   const html = renderBlogPost(c.req.param("slug"));
   if (!html) return htmlResponse("<h1>404</h1><p>記事が見つかりません。</p>", 404);
@@ -643,6 +664,13 @@ app.get("/sitemap.xml", async (c) => {
     { loc: "https://stock-ai.uk/stocks/" },
     { loc: "https://stock-ai.uk/contact" },
   ];
+  for (const catSlug of listCategorySlugs()) {
+    urls.push({ loc: `https://stock-ai.uk/blog/category/${catSlug}` });
+    const pages = categoryPageCount(catSlug);
+    for (let p = 2; p <= pages; p++) {
+      urls.push({ loc: `https://stock-ai.uk/blog/category/${catSlug}/page/${p}` });
+    }
+  }
   for (const p of listPostMeta()) {
     urls.push({ loc: `https://stock-ai.uk/blog/${p.slug}`, lastmod: p.date });
   }
