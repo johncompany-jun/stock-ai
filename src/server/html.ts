@@ -48,6 +48,7 @@ export const renderLayout = (o: LayoutOpts): string => {
       <a href="/" class="site-logo"><img src="/logo.svg" alt="" width="26" height="26" />${SITE_NAME}</a>
       <nav class="site-nav">
         <a href="/stocks/">株</a>
+        <a href="/picks/">推し実績</a>
         <a href="/fx/">FX</a>
         <a href="/blog/">ブログ</a>
         <a href="/about">このサイト</a>

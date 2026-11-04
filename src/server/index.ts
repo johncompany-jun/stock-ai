@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { candles, contacts, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, waitlist, watchlist } from "./db/schema";
@@ -42,6 +42,14 @@ import {
   type StocksMonthlyRow,
   type StocksPick,
 } from "./stocks";
+import {
+  PICKS_PER_PAGE,
+  renderPicksIndex,
+  type PicksAgg,
+  type PicksIndexData,
+  type PicksRecord,
+  type PicksYearly,
+} from "./picks";
 
 type Bindings = {
   DB: D1Database;
@@ -304,6 +312,79 @@ app.get("/stocks/", async (c) => {
   };
 
   return htmlResponse(renderStocksIndex(data));
+});
+
+const renderPicksPage = async (c: Context<{ Bindings: Bindings }>, page: number) => {
+  const db = drizzle(c.env.DB);
+
+  const [totalRow] = (await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(patternPicks)) as Array<{ n: number }>;
+  const total = totalRow?.n ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PICKS_PER_PAGE));
+  if (page < 1 || page > totalPages) {
+    return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  }
+
+  const [agg] = (await db
+    .select({
+      n: sql<number>`COUNT(*)`,
+      n30d: sql<number>`SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END)`,
+      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
+      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
+      firstDate: sql<number>`MIN(${patternPicks.runDate})`,
+      lastDate: sql<number>`MAX(${patternPicks.runDate})`,
+    })
+    .from(patternPicks)) as Array<PicksAgg>;
+
+  const yearly = (await c.env.DB.prepare(
+    `SELECT CAST(run_date / 10000 AS INTEGER) AS year,
+            COUNT(*) AS n,
+            ROUND(100.0 * SUM(CASE WHEN return_30d_pct > 0 THEN 1 ELSE 0 END)
+                  / NULLIF(SUM(CASE WHEN return_30d_pct IS NOT NULL THEN 1 ELSE 0 END), 0), 2) AS wr30d,
+            ROUND(AVG(return_30d_pct), 3) AS avg30d
+     FROM pattern_picks
+     GROUP BY year
+     ORDER BY year DESC`,
+  ).all()).results as unknown as PicksYearly[];
+
+  const offset = (page - 1) * PICKS_PER_PAGE;
+  const records = (await db
+    .select({
+      runDate: patternPicks.runDate,
+      code: patternPicks.code,
+      name: stocks.name,
+      patterns: patternPicks.patterns,
+      entryClose: patternPicks.entryClose,
+      return5dPct: patternPicks.return5dPct,
+      return15dPct: patternPicks.return15dPct,
+      return30dPct: patternPicks.return30dPct,
+    })
+    .from(patternPicks)
+    .leftJoin(stocks, eq(stocks.code, patternPicks.code))
+    .orderBy(desc(patternPicks.runDate), patternPicks.code)
+    .limit(PICKS_PER_PAGE)
+    .offset(offset)) as PicksRecord[];
+
+  const data: PicksIndexData = {
+    agg: agg ?? null,
+    yearly,
+    records,
+    page,
+    totalPages,
+    total,
+  };
+  return htmlResponse(renderPicksIndex(data));
+};
+
+app.get("/picks", (c) => c.redirect("/picks/", 301));
+app.get("/picks/", (c) => renderPicksPage(c, 1));
+app.get("/picks/page/:page", (c) => {
+  const page = Number(c.req.param("page"));
+  if (!Number.isInteger(page) || page < 1) {
+    return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  }
+  return renderPicksPage(c, page);
 });
 
 app.get("/fx", (c) => c.redirect("/fx/", 301));
@@ -662,6 +743,7 @@ app.get("/sitemap.xml", async (c) => {
     { loc: "https://stock-ai.uk/blog/" },
     { loc: "https://stock-ai.uk/fx/" },
     { loc: "https://stock-ai.uk/stocks/" },
+    { loc: "https://stock-ai.uk/picks/" },
     { loc: "https://stock-ai.uk/contact" },
   ];
   for (const catSlug of listCategorySlugs()) {
