@@ -8,6 +8,8 @@ node_modules
 dist
 .wrangler
 data/*.sql
+data/**/*.sql
+data/picks-extension/
 tmp/
 # Tailwind build output (generated from src/styles.css by `bun run css:build`)
 public/styles.css
