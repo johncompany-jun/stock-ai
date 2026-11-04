@@ -49,5 +49,5 @@ jobs:
         run: >
           bun run scripts/fx-send-signal.ts
           --pair USDJPY --remote
-          --tpPipsLong 25 --tpPipsShort 30 --slPips 20
+          --tpPipsLong 25 --tpPipsShort 25 --slPips 20
           ${{ inputs.date && format('--date {0}', inputs.date) || '' }}

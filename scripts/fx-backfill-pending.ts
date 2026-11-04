@@ -17,7 +17,7 @@ const { values } = parseArgs({
   options: {
     pair: { type: "string", default: "USDJPY" },
     tpPipsLong: { type: "string", default: "25" },
-    tpPipsShort: { type: "string", default: "30" },
+    tpPipsShort: { type: "string", default: "25" },
     slPips: { type: "string", default: "20" },
     remote: { type: "boolean", default: false },
   },

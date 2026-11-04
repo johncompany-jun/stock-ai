@@ -28,7 +28,7 @@ const { values } = parseArgs({
     k: { type: "string", default: "10" },
     modelDir: { type: "string", default: "data/fx/model" },
     tpPipsLong: { type: "string", default: "25" },
-    tpPipsShort: { type: "string", default: "30" },
+    tpPipsShort: { type: "string", default: "25" },
     slPips: { type: "string", default: "20" },
     to: { type: "string" },
     remote: { type: "boolean", default: false },
