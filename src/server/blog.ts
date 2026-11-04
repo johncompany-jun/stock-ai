@@ -90,6 +90,16 @@ const RELATED: Record<string, string[]> = {
   "stock-broker-comparison-100k": ["nisa-broker-selection", "range-cycle-backtest-1235", "2026-11-candidate-stocks"],
   "fx-broker-small-lot": ["fx-model-build-review", "knn-similar-day-prediction", "gotoubi-anomaly-check"],
   "nisa-broker-selection": ["stock-broker-comparison-100k", "range-cycle-backtest-1235", "stock-seasonality-september"],
+  "low-price-stock-range-cycle": ["range-cycle-backtest-1235", "nisa-broker-selection", "stock-broker-comparison-100k"],
+  "sma-touch-strategy-3-patterns": ["range-cycle-backtest-1235", "golden-cross-why-slow", "low-price-stock-range-cycle"],
+  "1man-yen-usdjpy-start": ["fx-broker-small-lot", "fx-model-build-review", "stoploss-20pips-fixed"],
+  "golden-cross-why-slow": ["sma-touch-strategy-3-patterns", "range-cycle-backtest-1235", "backtest-5-pitfalls"],
+  "ipo-exclusion-rule": ["range-cycle-backtest-1235", "low-price-stock-range-cycle", "backtest-5-pitfalls"],
+  "no-margin-trading": ["nisa-broker-selection", "stock-broker-comparison-100k", "low-price-stock-range-cycle"],
+  "stoploss-20pips-fixed": ["fx-model-build-review", "1man-yen-usdjpy-start", "backtest-5-pitfalls"],
+  "backtest-5-pitfalls": ["range-cycle-backtest-1235", "fx-model-build-review", "stock-model-collapse-2026-10"],
+  "stock-fx-two-wheels": ["range-cycle-backtest-1235", "fx-model-build-review", "no-margin-trading"],
+  "cloudflare-d1-workers-zero-cost": ["how-this-site-is-built", "monthly-cost-breakdown", "ai-server-pick-failure"],
 };
 
 const renderRelatedPosts = (currentSlug: string): string => {

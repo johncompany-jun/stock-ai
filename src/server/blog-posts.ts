@@ -15,6 +15,16 @@ import candidateStocks202611 from "../../content/blog/2026-11-candidate-stocks.m
 import stockBrokerComparison100k from "../../content/blog/stock-broker-comparison-100k.md";
 import fxBrokerSmallLot from "../../content/blog/fx-broker-small-lot.md";
 import nisaBrokerSelection from "../../content/blog/nisa-broker-selection.md";
+import lowPriceStockRangeCycle from "../../content/blog/low-price-stock-range-cycle.md";
+import smaTouchStrategy3Patterns from "../../content/blog/sma-touch-strategy-3-patterns.md";
+import oneManYenUsdjpyStart from "../../content/blog/1man-yen-usdjpy-start.md";
+import goldenCrossWhySlow from "../../content/blog/golden-cross-why-slow.md";
+import ipoExclusionRule from "../../content/blog/ipo-exclusion-rule.md";
+import noMarginTrading from "../../content/blog/no-margin-trading.md";
+import stoploss20PipsFixed from "../../content/blog/stoploss-20pips-fixed.md";
+import backtest5Pitfalls from "../../content/blog/backtest-5-pitfalls.md";
+import stockFxTwoWheels from "../../content/blog/stock-fx-two-wheels.md";
+import cloudflareD1WorkersZeroCost from "../../content/blog/cloudflare-d1-workers-zero-cost.md";
 
 export const RAW_POSTS: Record<string, string> = {
   "hello-stock-ai": helloStockAi,
@@ -34,4 +44,14 @@ export const RAW_POSTS: Record<string, string> = {
   "stock-broker-comparison-100k": stockBrokerComparison100k,
   "fx-broker-small-lot": fxBrokerSmallLot,
   "nisa-broker-selection": nisaBrokerSelection,
+  "low-price-stock-range-cycle": lowPriceStockRangeCycle,
+  "sma-touch-strategy-3-patterns": smaTouchStrategy3Patterns,
+  "1man-yen-usdjpy-start": oneManYenUsdjpyStart,
+  "golden-cross-why-slow": goldenCrossWhySlow,
+  "ipo-exclusion-rule": ipoExclusionRule,
+  "no-margin-trading": noMarginTrading,
+  "stoploss-20pips-fixed": stoploss20PipsFixed,
+  "backtest-5-pitfalls": backtest5Pitfalls,
+  "stock-fx-two-wheels": stockFxTwoWheels,
+  "cloudflare-d1-workers-zero-cost": cloudflareD1WorkersZeroCost,
 };
