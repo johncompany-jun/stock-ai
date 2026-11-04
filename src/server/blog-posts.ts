@@ -25,6 +25,7 @@ import stoploss20PipsFixed from "../../content/blog/stoploss-20pips-fixed.md";
 import backtest5Pitfalls from "../../content/blog/backtest-5-pitfalls.md";
 import stockFxTwoWheels from "../../content/blog/stock-fx-two-wheels.md";
 import cloudflareD1WorkersZeroCost from "../../content/blog/cloudflare-d1-workers-zero-cost.md";
+import weeklyPick02AiPredictionWrapup from "../../content/blog/weekly-pick-02-ai-prediction-wrapup.md";
 
 export const RAW_POSTS: Record<string, string> = {
   "hello-stock-ai": helloStockAi,
@@ -54,4 +55,5 @@ export const RAW_POSTS: Record<string, string> = {
   "backtest-5-pitfalls": backtest5Pitfalls,
   "stock-fx-two-wheels": stockFxTwoWheels,
   "cloudflare-d1-workers-zero-cost": cloudflareD1WorkersZeroCost,
+  "weekly-pick-02-ai-prediction-wrapup": weeklyPick02AiPredictionWrapup,
 };

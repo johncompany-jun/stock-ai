@@ -78,6 +78,7 @@ const CATEGORY_OF: Record<string, string> = {
   "how-this-site-is-built": "dev",
   "2026-10-monthly-review": "dev",
   "cloudflare-d1-workers-zero-cost": "dev",
+  "weekly-pick-02-ai-prediction-wrapup": "strategy",
 };
 
 const POSTS_PER_CATEGORY_ON_INDEX = 5;
@@ -233,6 +234,7 @@ const RELATED: Record<string, string[]> = {
   "backtest-5-pitfalls": ["range-cycle-backtest-1235", "fx-model-build-review", "stock-model-collapse-2026-10"],
   "stock-fx-two-wheels": ["range-cycle-backtest-1235", "fx-model-build-review", "no-margin-trading"],
   "cloudflare-d1-workers-zero-cost": ["how-this-site-is-built", "monthly-cost-breakdown", "ai-server-pick-failure"],
+  "weekly-pick-02-ai-prediction-wrapup": ["weekly-pick-01-klab-review", "stock-model-collapse-2026-10", "range-cycle-backtest-1235"],
 };
 
 const renderRelatedPosts = (currentSlug: string): string => {
