@@ -33,7 +33,7 @@ import {
   renderBlogPost,
   renderCategoryPage,
 } from "./blog";
-import { renderFxIndex, renderFxLog, renderFxNotFound, type FxLogRow } from "./fx";
+import { FX_LOGS_PER_PAGE, renderFxIndex, renderFxLog, renderFxNotFound, type FxLogRow } from "./fx";
 import {
   renderStocksIndex,
   type StocksAgg,
@@ -387,8 +387,10 @@ app.get("/picks/page/:page", (c) => {
   return renderPicksPage(c, page);
 });
 
-app.get("/fx", (c) => c.redirect("/fx/", 301));
-app.get("/fx/", async (c) => {
+const renderFxIndexPage = async (
+  c: Context<{ Bindings: Bindings }>,
+  page: number,
+) => {
   const db = drizzle(c.env.DB);
   const rows = (await db
     .select({
@@ -412,6 +414,11 @@ app.get("/fx/", async (c) => {
     .where(eq(fxPredictions.pair, "USDJPY"))
     .orderBy(desc(fxPredictions.date))) as FxLogRow[];
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / FX_LOGS_PER_PAGE));
+  if (page < 1 || page > totalPages) {
+    return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  }
+
   const resolved = rows.filter((r) => r.hit != null);
   const totalPips = resolved.reduce((s, r) => s + (r.pnlPips ?? 0), 0);
   const winCount = resolved.filter((r) => r.hit === 1).length;
@@ -428,10 +435,20 @@ app.get("/fx/", async (c) => {
       recent30Pips,
       recent30Count: recent30.length,
       recent30Wins,
+      page,
     }),
   );
-});
+};
 
+app.get("/fx", (c) => c.redirect("/fx/", 301));
+app.get("/fx/", (c) => renderFxIndexPage(c, 1));
+app.get("/fx/page/:page", (c) => {
+  const page = Number(c.req.param("page"));
+  if (!Number.isInteger(page) || page < 1) {
+    return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
+  }
+  return renderFxIndexPage(c, page);
+});
 app.get("/fx/log/:date", async (c) => {
   const date = c.req.param("date");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

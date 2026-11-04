@@ -271,7 +271,7 @@ export const renderAbout = (): string =>
       <h2>検証の内容</h2>
       <ul class="list-disc pl-5 space-y-1">
         <li><strong>株</strong>: レンジサイクル戦略 (3M安値で種まき/3M高値で収穫) に合致した銘柄を日次でピック。仮想50万円での検証ポートフォリオを公開。</li>
-        <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。LONG TP+25 / SHORT TP+30 / SL-20 pips の非対称 R:R で検証。</li>
+        <li><strong>FX</strong>: USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測。TP+25 / SL-20 pips (symmetric R:R) で検証。</li>
       </ul>
     </section>
 

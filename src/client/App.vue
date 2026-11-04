@@ -311,6 +311,15 @@ const fxStartCapital = ref(500000);
 const fxLotSize = ref(10000);
 const fxPipYen = ref(100);
 const fxLoading = ref(false);
+const FX_TRADES_PER_PAGE = 60;
+const fxTradesPage = ref(1);
+const fxTradesTotalPages = computed(() =>
+  Math.max(1, Math.ceil(fxTrades.value.length / FX_TRADES_PER_PAGE)),
+);
+const fxTradesPageItems = computed(() => {
+  const start = (fxTradesPage.value - 1) * FX_TRADES_PER_PAGE;
+  return fxTrades.value.slice(start, start + FX_TRADES_PER_PAGE);
+});
 
 const fetchFxSignals = async () => {
   fxLoading.value = true;
@@ -951,7 +960,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <h3 class="fx-section-title">トレード履歴 ({{ fxTrades.length }}件)</h3>
+        <h3 class="fx-section-title">トレード履歴 ({{ fxTrades.length }}件{{ fxTradesTotalPages > 1 ? ` — ${fxTradesPage}/${fxTradesTotalPages}ページ` : "" }})</h3>
         <table class="pattern-stats-table fx-trades">
           <thead>
             <tr>
@@ -966,7 +975,7 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in fxTrades" :key="t.date">
+            <tr v-for="t in fxTradesPageItems" :key="t.date">
               <td>{{ t.date }}</td>
               <td>
                 <span class="dir-badge" :class="t.direction.toLowerCase()">{{ t.direction }}</span>
@@ -990,6 +999,19 @@ onMounted(async () => {
             </tr>
           </tbody>
         </table>
+        <nav v-if="fxTradesTotalPages > 1" class="fx-trades-nav">
+          <button
+            class="auth-btn"
+            :disabled="fxTradesPage <= 1"
+            @click="fxTradesPage--"
+          >← 前のページ</button>
+          <span class="fx-trades-page-label">{{ fxTradesPage }} / {{ fxTradesTotalPages }} ページ (全 {{ fxTrades.length }}件)</span>
+          <button
+            class="auth-btn"
+            :disabled="fxTradesPage >= fxTradesTotalPages"
+            @click="fxTradesPage++"
+          >次のページ →</button>
+        </nav>
       </div>
     </section>
 

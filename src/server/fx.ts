@@ -39,6 +39,8 @@ const hitBadge = (hit: number | null): string => {
 const pipsCls = (v: number | null): string =>
   v == null ? "" : v >= 0 ? "pos" : "neg";
 
+export const FX_LOGS_PER_PAGE = 60;
+
 export type FxIndexData = {
   rows: FxLogRow[];
   totalPips: number;
@@ -47,14 +49,17 @@ export type FxIndexData = {
   recent30Pips: number;
   recent30Count: number;
   recent30Wins: number;
+  page: number;
 };
 
 export const renderFxIndex = (data: FxIndexData): string => {
-  const { rows, totalPips, resolvedCount, winCount, recent30Pips, recent30Count, recent30Wins } =
+  const { rows, totalPips, resolvedCount, winCount, recent30Pips, recent30Count, recent30Wins, page } =
     data;
   const latest = rows[0];
-  const items = rows
-    .slice(0, 60)
+  const totalPages = Math.max(1, Math.ceil(rows.length / FX_LOGS_PER_PAGE));
+  const offset = (page - 1) * FX_LOGS_PER_PAGE;
+  const pageRows = rows.slice(offset, offset + FX_LOGS_PER_PAGE);
+  const items = pageRows
     .map(
       (r) => `
       <li>
@@ -68,20 +73,35 @@ export const renderFxIndex = (data: FxIndexData): string => {
     )
     .join("");
 
+  const linkTo = (n: number): string => (n === 1 ? "/fx/" : `/fx/page/${n}`);
+  const prev =
+    page > 1
+      ? `<a href="${linkTo(page - 1)}" class="btn btn-outline text-sm" rel="prev">← 前のページ</a>`
+      : `<span class="btn btn-outline text-sm opacity-50 pointer-events-none">← 前のページ</span>`;
+  const next =
+    page < totalPages
+      ? `<a href="${linkTo(page + 1)}" class="btn btn-outline text-sm" rel="next">次のページ →</a>`
+      : `<span class="btn btn-outline text-sm opacity-50 pointer-events-none">次のページ →</span>`;
+  const nav =
+    totalPages > 1
+      ? `<nav class="flex items-center justify-between mt-4">${prev}<span class="text-sm text-[color:var(--color-muted)]">${page} / ${totalPages} ページ (全 ${rows.length} 件)</span>${next}</nav>`
+      : "";
+
   const wr = resolvedCount > 0 ? ((winCount / resolvedCount) * 100).toFixed(1) : "—";
   const recentWr = recent30Count > 0 ? ((recent30Wins / recent30Count) * 100).toFixed(1) : "—";
 
+  const pageSuffix = page > 1 ? ` (${page}/${totalPages})` : "";
   return renderLayout({
-    title: "FX USDJPY 寄付方向の検証ログ — stock-ai",
+    title: `FX USDJPY 寄付方向の検証ログ${pageSuffix} — stock-ai`,
     description:
-      "USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測し、LONG TP+25 / SHORT TP+30 / SL-20 pips の非対称 R:R で検証した日次ログの一覧。",
-    path: "/fx/",
+      "USDJPY の寄付方向を 5-seed MLP アンサンブル + kNN で予測し、TP+25 / SL-20 pips (symmetric R:R) で検証した日次ログの一覧。",
+    path: page === 1 ? "/fx/" : `/fx/page/${page}`,
     content: `
     <section class="hero">
       <h1>FX USDJPY 寄付方向の検証ログ</h1>
       <p class="lead">
         USDJPY の 9:00 JST 寄付足 (= 00:00 UTC) に対して、5-seed MLP アンサンブルと kNN で方向判定を行い、
-        LONG TP+25 / SHORT TP+30 / SL-20 pips の非対称 R:R で検証した日次ログの一覧です。
+        TP+25 / SL-20 pips (symmetric R:R) で検証した日次ログの一覧です。
       </p>
       <div class="notice">仮想検証であり、実売買を推奨するものではありません。</div>
     </section>
@@ -135,8 +155,9 @@ export const renderFxIndex = (data: FxIndexData): string => {
     </section>
 
     <section class="section">
-      <h2>日次ログ一覧 (直近 60 件)</h2>
+      <h2>日次ログ一覧 ${totalPages > 1 ? `(${page} / ${totalPages} ページ)` : `(全 ${rows.length} 件)`}</h2>
       <ul class="row-list">${items}</ul>
+      ${nav}
     </section>
 `,
   });
@@ -192,7 +213,7 @@ export const renderFxLog = (row: FxLogRow, prev: FxLogRow | null): string => {
         <h2>過去類似日 (k=${row.k})</h2>
         <p>
           当日の寄付条件に特徴量が最も近い過去 ${row.k} 営業日を kNN で検索しました。
-          その日の 9:00-11:00 のうちに LONG なら TP+25 pips、SHORT なら TP+30 pips、どちらも SL-20 pips に先に当たった側で勝敗を定義しています。
+          その日の 9:00-11:00 のうちに TP+25 pips / SL-20 pips (LONG/SHORT 共通) のどちらに先に当たったかで勝敗を定義しています。
         </p>
         <div class="card">
           <div class="stat-grid">
@@ -238,7 +259,7 @@ export const renderFxLog = (row: FxLogRow, prev: FxLogRow | null): string => {
         <h2>検証ルール</h2>
         <ul class="list-disc pl-5 space-y-1 text-sm">
           <li>エントリー: 9:00 JST (= 00:00 UTC) の寄付足</li>
-          <li>利確/損切: LONG TP+25 pips / SHORT TP+30 pips / 共通 SL-20 pips (非対称 R:R)</li>
+          <li>利確/損切: TP+25 pips / SL-20 pips (LONG/SHORT 共通、symmetric R:R)</li>
           <li>強制手仕舞い: 11:00 JST 時点でまだ残っていればクローズ</li>
           <li>モデル: 5-seed MLP アンサンブル + 類似日 kNN</li>
         </ul>
