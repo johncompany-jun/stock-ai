@@ -26,6 +26,9 @@ import backtest5Pitfalls from "../../content/blog/backtest-5-pitfalls.md";
 import stockFxTwoWheels from "../../content/blog/stock-fx-two-wheels.md";
 import cloudflareD1WorkersZeroCost from "../../content/blog/cloudflare-d1-workers-zero-cost.md";
 import weeklyPick02AiPredictionWrapup from "../../content/blog/weekly-pick-02-ai-prediction-wrapup.md";
+import japanStockMonthlyWinRateRanking from "../../content/blog/japan-stock-monthly-win-rate-ranking.md";
+import nisaGrowth250kSimulation from "../../content/blog/nisa-growth-250k-simulation.md";
+import rangeBottom3monthReversalStrategy from "../../content/blog/range-bottom-3month-reversal-strategy.md";
 
 export const RAW_POSTS: Record<string, string> = {
   "hello-stock-ai": helloStockAi,
@@ -56,4 +59,7 @@ export const RAW_POSTS: Record<string, string> = {
   "stock-fx-two-wheels": stockFxTwoWheels,
   "cloudflare-d1-workers-zero-cost": cloudflareD1WorkersZeroCost,
   "weekly-pick-02-ai-prediction-wrapup": weeklyPick02AiPredictionWrapup,
+  "japan-stock-monthly-win-rate-ranking": japanStockMonthlyWinRateRanking,
+  "nisa-growth-250k-simulation": nisaGrowth250kSimulation,
+  "range-bottom-3month-reversal-strategy": rangeBottom3monthReversalStrategy,
 };

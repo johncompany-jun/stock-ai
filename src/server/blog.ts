@@ -79,6 +79,9 @@ const CATEGORY_OF: Record<string, string> = {
   "2026-10-monthly-review": "dev",
   "cloudflare-d1-workers-zero-cost": "dev",
   "weekly-pick-02-ai-prediction-wrapup": "strategy",
+  "japan-stock-monthly-win-rate-ranking": "stock",
+  "nisa-growth-250k-simulation": "stock",
+  "range-bottom-3month-reversal-strategy": "stock",
 };
 
 const POSTS_PER_CATEGORY_ON_INDEX = 5;
