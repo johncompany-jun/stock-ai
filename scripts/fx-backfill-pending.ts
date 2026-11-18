@@ -16,8 +16,8 @@ import {
 const { values } = parseArgs({
   options: {
     pair: { type: "string", default: "USDJPY" },
-    tpPipsLong: { type: "string", default: "25" },
-    tpPipsShort: { type: "string", default: "25" },
+    tpPipsLong: { type: "string", default: "20" },
+    tpPipsShort: { type: "string", default: "20" },
     slPips: { type: "string", default: "20" },
     remote: { type: "boolean", default: false },
   },
