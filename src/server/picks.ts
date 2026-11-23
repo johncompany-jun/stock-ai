@@ -141,7 +141,7 @@ export const renderPicksIndex = (data: PicksIndexData): string => {
   return renderLayout({
     title: "推し実績 — stock-ai",
     description:
-      "stock-ai がピックした銘柄の過去実績を全件公開。5 年分 6,000 件以上のバックテストと実運用シグナルで、30 日後の勝率・平均リターンがどう推移しているかを記録。",
+      "stock-ai がピックした銘柄の過去実績を全件公開。6 年分 7,000 件以上のバックテストと実運用シグナルで、30 日後の勝率・平均リターンがどう推移しているかを記録。",
     path: page === 1 ? "/picks/" : `/picks/page/${page}`,
     content: `
     <section class="hero">
@@ -192,7 +192,7 @@ export const renderPicksIndex = (data: PicksIndexData): string => {
     </section>
     <section class="section">
       <p class="text-sm text-[color:var(--color-muted)]">
-        戦略の全体像は <a href="/blog/range-cycle-backtest-1235">6,106 件バックテスト記事</a> を、
+        戦略の全体像は <a href="/blog/range-cycle-backtest-1235">7,067 件バックテスト記事</a> を、
         今日のピックは <a href="/stocks/">/stocks/</a> をご覧ください。
       </p>
       <p class="text-xs text-[color:var(--color-muted-soft)] mt-2">本ページは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。</p>
