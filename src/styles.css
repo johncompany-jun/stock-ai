@@ -231,6 +231,38 @@
   .row-list .pips.pos { color: var(--color-win); }
   .row-list .pips.neg { color: var(--color-loss); }
 
+  .fx-month-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .fx-month {
+    border: 1px solid var(--color-divider);
+    border-radius: 8px;
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+  .fx-month > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.7rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    user-select: none;
+  }
+  .fx-month > summary::-webkit-details-marker { display: none; }
+  .fx-month > summary::before {
+    content: "▸";
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    transition: transform 120ms ease;
+  }
+  .fx-month[open] > summary::before { transform: rotate(90deg); }
+  .fx-month > summary:hover { background: var(--color-surface-soft); }
+  .fx-month .fx-month-label { font-weight: 600; font-size: 0.95rem; }
+  .fx-month .fx-month-stat { color: var(--color-muted); font-size: 0.8rem; margin-left: auto; }
+  .fx-month .fx-month-pips { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; font-size: 0.9rem; min-width: 5.5rem; text-align: right; }
+  .fx-month .fx-month-pips.pos { color: var(--color-win); }
+  .fx-month .fx-month-pips.neg { color: var(--color-loss); }
+  .fx-month > .row-list { padding: 0 0.5rem 0.75rem; border-top: 1px solid var(--color-divider); }
+
   .monthly-table .verdict-good { background: color-mix(in srgb, var(--color-win-bg) 55%, transparent); }
   .monthly-table .verdict-bad { background: color-mix(in srgb, var(--color-loss-bg) 55%, transparent); }
   .monthly-table .verdict-mid { background: transparent; }

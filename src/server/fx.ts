@@ -59,18 +59,55 @@ export const renderFxIndex = (data: FxIndexData): string => {
   const totalPages = Math.max(1, Math.ceil(rows.length / FX_LOGS_PER_PAGE));
   const offset = (page - 1) * FX_LOGS_PER_PAGE;
   const pageRows = rows.slice(offset, offset + FX_LOGS_PER_PAGE);
-  const items = pageRows
-    .map(
-      (r) => `
-      <li>
-        <a href="/fx/log/${htmlEscape(r.date)}">
-          <span class="date">${htmlEscape(r.date)}</span>
-          <span class="dir ${dirClass(r.direction)}">${htmlEscape(dirJa(r.direction))}</span>
-          <span class="pips ${pipsCls(r.pnlPips)}">${htmlEscape(fmtPips(r.pnlPips))}</span>
-          ${hitBadge(r.hit)}
-        </a>
-      </li>`,
-    )
+
+  const groupsByMonth = new Map<string, FxLogRow[]>();
+  for (const r of pageRows) {
+    const ym = r.date.slice(0, 7);
+    const arr = groupsByMonth.get(ym) ?? [];
+    arr.push(r);
+    groupsByMonth.set(ym, arr);
+  }
+  const groupKeys = Array.from(groupsByMonth.keys());
+
+  const items = groupKeys
+    .map((ym, idx) => {
+      const groupRows = groupsByMonth.get(ym)!;
+      const resolved = groupRows.filter((r) => r.hit != null);
+      const wins = resolved.filter((r) => r.hit === 1).length;
+      const losses = resolved.length - wins;
+      const pips = resolved.reduce((s, r) => s + (r.pnlPips ?? 0), 0);
+      const pipsClsName = pipsCls(pips);
+      const summaryStat =
+        resolved.length > 0
+          ? `${wins} 勝 ${losses} 敗 (勝率 ${((wins / resolved.length) * 100).toFixed(0)}%)`
+          : "判定前";
+      const summaryPips =
+        resolved.length > 0 ? `${pips >= 0 ? "+" : ""}${pips.toFixed(1)} pips` : "—";
+      const monthLabel = `${ym.slice(0, 4)}年 ${Number(ym.slice(5, 7))}月`;
+      const open = idx < 2 ? " open" : "";
+      const body = groupRows
+        .map(
+          (r) => `
+        <li>
+          <a href="/fx/log/${htmlEscape(r.date)}">
+            <span class="date">${htmlEscape(r.date)}</span>
+            <span class="dir ${dirClass(r.direction)}">${htmlEscape(dirJa(r.direction))}</span>
+            <span class="pips ${pipsCls(r.pnlPips)}">${htmlEscape(fmtPips(r.pnlPips))}</span>
+            ${hitBadge(r.hit)}
+          </a>
+        </li>`,
+        )
+        .join("");
+      return `
+      <details class="fx-month"${open}>
+        <summary>
+          <span class="fx-month-label">${monthLabel}</span>
+          <span class="fx-month-stat">${summaryStat}</span>
+          <span class="fx-month-pips ${pipsClsName}">${summaryPips}</span>
+        </summary>
+        <ul class="row-list">${body}</ul>
+      </details>`;
+    })
     .join("");
 
   const linkTo = (n: number): string => (n === 1 ? "/fx/" : `/fx/page/${n}`);
@@ -156,7 +193,8 @@ export const renderFxIndex = (data: FxIndexData): string => {
 
     <section class="section">
       <h2>日次ログ一覧 ${totalPages > 1 ? `(${page} / ${totalPages} ページ)` : `(全 ${rows.length} 件)`}</h2>
-      <ul class="row-list">${items}</ul>
+      <p class="text-sm text-[color:var(--color-muted)] mb-3">月ごとに折りたたまれています。見出しをクリックで日別詳細を展開。</p>
+      <div class="fx-month-list">${items}</div>
       ${nav}
     </section>
 `,
