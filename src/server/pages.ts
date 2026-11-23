@@ -148,7 +148,7 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
     </section>
 
     <section class="section" id="start">
-      <h2>投資を始めるには</h2>
+      <h2>10 万円から投資を始めるには</h2>
       <p class="text-sm mb-4">
         このサイトの候補を実際に試すには、国内の証券口座か FX 口座が必要です。
         NISA で非課税にしたい方 / 通常口座で小さく始めたい方 / FX も試したい方で、ガイドを分けています。
