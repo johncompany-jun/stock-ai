@@ -17,9 +17,16 @@ export type LayoutOpts = {
 const SITE_URL = "https://stock-ai.uk";
 const SITE_NAME = "stock-ai";
 
+// Cloudflare Web Analytics beacon token. Set via dashboard → Analytics → Web Analytics.
+// 空文字のままだとビーコンを出さない。
+const CF_ANALYTICS_TOKEN = "";
+
 export const renderLayout = (o: LayoutOpts): string => {
   const url = `${SITE_URL}${o.path}`;
   const ogType = o.ogType ?? "website";
+  const analyticsScript = CF_ANALYTICS_TOKEN
+    ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${CF_ANALYTICS_TOKEN}"}'></script>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -41,6 +48,7 @@ export const renderLayout = (o: LayoutOpts): string => {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Serif+JP:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  ${analyticsScript}
 </head>
 <body>
   <div class="site-wrap">

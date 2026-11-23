@@ -38,26 +38,29 @@ const renderStocksCard = (s: HomeSnapshot["stocks"]): string => {
   const wr = s.wr30d != null ? `${s.wr30d.toFixed(1)}%` : "—";
   const avg = s.avg30d != null ? `${s.avg30d >= 0 ? "+" : ""}${s.avg30d.toFixed(2)}%` : "—";
   const avgCls = s.avg30d != null && s.avg30d >= 0 ? "pos" : s.avg30d != null && s.avg30d < 0 ? "neg" : "";
+  const todayBody =
+    s.todayCount > 0
+      ? `<strong>${s.todayCount} 件</strong>の候補が出ています。`
+      : `今日は候補ゼロ。<strong>無理に買わないのがこの戦略</strong>です。`;
   return `
+    <p class="text-sm mb-3">
+      ${htmlEscape(formatYmd(s.latestDate))} 時点 — ${todayBody}
+    </p>
     <div class="stat-grid">
       <div class="stat">
-        <span class="label">最新日</span>
-        <span class="value sm">${htmlEscape(formatYmd(s.latestDate))}</span>
-      </div>
-      <div class="stat">
-        <span class="label">当日ピック数</span>
-        <span class="value">${s.todayCount}<span class="sub"> 件</span></span>
-      </div>
-      <div class="stat">
-        <span class="label">過去 30 日勝率</span>
+        <span class="label">30 日後の勝率</span>
         <span class="value">${wr}</span>
-        <span class="sub">n = ${s.sampleN}</span>
+        <span class="sub">過去 ${s.sampleN.toLocaleString()} 件の検証</span>
       </div>
       <div class="stat">
         <span class="label">平均リターン</span>
         <span class="value ${avgCls}">${avg}</span>
+        <span class="sub">30 日保有ベース</span>
       </div>
-    </div>`;
+    </div>
+    <p class="mt-3 text-xs text-[color:var(--color-muted)] m-0">
+      3 ヶ月安値まで下げた銘柄を検出し、30 日後の値動きを集計しています。
+    </p>`;
 };
 
 const renderFxCard = (f: HomeSnapshot["fx"]): string => {
@@ -65,32 +68,32 @@ const renderFxCard = (f: HomeSnapshot["fx"]): string => {
     return `<p class="text-sm text-[color:var(--color-muted)]">FX の検証データはまだ記録されていません。</p>`;
   }
   const prob = f.probability != null ? `${(f.probability * 100).toFixed(1)}%` : "—";
-  const conf = f.confidence != null ? f.confidence.toFixed(2) : "—";
   const pnl =
     f.pnlPips != null
       ? `${f.pnlPips >= 0 ? "+" : ""}${f.pnlPips.toFixed(1)} pips`
       : "判定前";
   const pnlCls = f.pnlPips != null && f.pnlPips >= 0 ? "pos" : f.pnlPips != null && f.pnlPips < 0 ? "neg" : "";
   return `
+    <p class="text-sm mb-3">
+      ${htmlEscape(f.latestDate)} の判定 — 寄付方向は
+      <span class="badge ${dirClass(f.direction)}">${htmlEscape(dirJa(f.direction))}</span>
+      （確率 ${prob}）。
+    </p>
     <div class="stat-grid">
       <div class="stat">
-        <span class="label">最新日</span>
-        <span class="value sm">${htmlEscape(f.latestDate)}</span>
-      </div>
-      <div class="stat">
-        <span class="label">方向</span>
-        <span class="value sm"><span class="badge ${dirClass(f.direction)}">${htmlEscape(dirJa(f.direction))}</span></span>
-      </div>
-      <div class="stat">
-        <span class="label">確率</span>
-        <span class="value">${prob}</span>
-        <span class="sub">信頼度 ${conf}</span>
+        <span class="label">エントリー</span>
+        <span class="value sm">9:05 JST</span>
+        <span class="sub">TP +20 / SL −20 pips</span>
       </div>
       <div class="stat">
         <span class="label">結果</span>
         <span class="value ${pnlCls}">${pnl}</span>
+        <span class="sub">11:00 までに手仕舞い</span>
       </div>
-    </div>`;
+    </div>
+    <p class="mt-3 text-xs text-[color:var(--color-muted)] m-0">
+      株の「待ち」の間、毎営業日動いているサブシステム。モデルの寄付予測と、過去類似日の勝敗を記録しています。
+    </p>`;
 };
 
 export const renderHome = (snapshot: HomeSnapshot): string => {
@@ -109,58 +112,62 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
     .join("");
 
   return renderLayout({
-    title: "stock-ai — 日本株とFXをAIで検証する個人サイト",
+    title: "stock-ai — 10万円から始める日本株の買いどき公開",
     description:
-      "日本株のパターン検出と USDJPY の寄付予測を機械学習で日次検証し、仮想50万円で勝率と平均リターンを公開するサイトです。",
+      "5 年 6,106 件のバックテストで勝率 47.88% / 平均 +1.05% を確認した「3 ヶ月安値戦略」の候補を日次で公開。株の待ち時間は USDJPY の寄付予測で毎日答え合わせしています。",
     path: "/",
     content: `
     <section class="hero">
-      <h1>AI の答え合わせを、<br />毎日公開しています。</h1>
+      <h1>10 万円から日本株を始める人へ。<br />買いどきを、毎週公開しています。</h1>
       <p class="lead">
-        日本株とFX (USDJPY) の値動きを機械学習モデルで予測し、
-        仮想 50 万円で勝率と平均リターンを日次で検証・公開しているサイトです。
+        5 年 6,106 件のバックテストで勝率 47.88% / 平均 +1.05% を確認した
+        「3 ヶ月安値戦略」の候補を日次で公開しています。
+        候補が出ない日は、USDJPY の寄付予測を毎日答え合わせしています。
       </p>
+      <div class="hero-cta">
+        <a href="/stocks/" class="btn">今日の株候補を見る →</a>
+        <a href="/blog/stock-broker-comparison-100k" class="btn btn-outline">10 万円から始める準備ガイド</a>
+      </div>
       <div class="notice">本サイトは過去データにもとづく検証記録であり、売買を勧めるものではありません。</div>
     </section>
 
     <section class="section">
-      <h2>今日の検証スナップショット</h2>
+      <h2>今日のシグナル</h2>
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="card">
-          <h3 class="text-[0.95rem] font-semibold mb-3">日本株 (レンジサイクル)</h3>
+          <h3 class="text-[0.95rem] font-semibold mb-3">日本株 — 3 ヶ月安値で種まき</h3>
           ${renderStocksCard(snapshot.stocks)}
-          <p class="mt-3 text-sm"><a href="/stocks/">株の検証ログを見る →</a></p>
+          <p class="mt-3 text-sm"><a href="/stocks/">今日の候補と全履歴を見る →</a></p>
         </div>
         <div class="card">
-          <h3 class="text-[0.95rem] font-semibold mb-3">FX USDJPY (寄付方向)</h3>
+          <h3 class="text-[0.95rem] font-semibold mb-3">FX USDJPY — 毎日の答え合わせ</h3>
           ${renderFxCard(snapshot.fx)}
-          <p class="mt-3 text-sm"><a href="/fx/">FX の検証ログを見る →</a></p>
+          <p class="mt-3 text-sm"><a href="/fx/">本日のログと履歴を見る →</a></p>
         </div>
       </div>
     </section>
 
-    <section class="section">
-      <h2>このサイトの使い方</h2>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <a href="/stocks/" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">1</div>
-          <div class="font-semibold mb-1">株の検証ログ</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">レンジ安値で検出した銘柄のバックテスト勝率と、月別の季節性を公開しています。</p>
+    <section class="section" id="start">
+      <h2>10 万円で日本株を始めるには</h2>
+      <p class="text-sm mb-4">
+        このサイトの候補を実際に試すには、国内の証券口座が必要です。
+        NISA で非課税にしたい方 / 通常口座で小さく始めたい方 / FX も試したい方で、ガイドを分けています。
+      </p>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <a href="/blog/stock-broker-comparison-100k" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (通常口座)</div>
+          <div class="font-semibold mb-1">10 万円で始める日本株</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">ネット証券 4 社を手数料・ツール・NISA 対応で比較。</p>
         </a>
-        <a href="/fx/" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">2</div>
-          <div class="font-semibold mb-1">FX の検証ログ</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">寄付方向の予測と、kNN が返した過去類似日の勝敗を日次で記録しています。</p>
+        <a href="/blog/nisa-broker-selection" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (NISA)</div>
+          <div class="font-semibold mb-1">NISA で非課税で始めたい方</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">年間 240 万円の成長投資枠で、売却益がまるごと非課税になる使い方。</p>
         </a>
-        <a href="/blog/" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">3</div>
-          <div class="font-semibold mb-1">ブログを読む</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">月次レポートと、モデル改善の開発記録を更新しています。</p>
-        </a>
-        <a href="#waitlist" class="card">
-          <div class="text-xs text-[color:var(--color-muted)] font-semibold mb-1">4</div>
-          <div class="font-semibold mb-1">配信を受け取る</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">待ちリストにご登録いただくと、配信開始時に確認メールをお送りします。</p>
+        <a href="/blog/fx-broker-small-lot" class="card">
+          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">FX</div>
+          <div class="font-semibold mb-1">1,000 通貨から始める FX</div>
+          <p class="text-sm text-[color:var(--color-muted)] m-0">月数百円の動きから練習できる、少額対応の FX 口座まとめ。</p>
         </a>
       </div>
     </section>
@@ -175,34 +182,6 @@ export const renderHome = (snapshot: HomeSnapshot): string => {
     </section>`
         : ""
     }
-
-    <section class="section" id="start">
-      <h2>このサイトの検証を自分でも試したい方へ</h2>
-      <p class="text-sm mb-4">
-        掲載している株・FX の戦略を自分でも試すには、国内の証券口座 (株) か FX 口座が必要です。
-        目的別に 3 本のガイド記事を用意しているので、まずはこちらから。
-      </p>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <a href="/blog/stock-broker-comparison-100k" class="card">
-          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (通常口座)</div>
-          <div class="font-semibold mb-1">10 万円で始める日本株</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">レンジサイクル実践用に、ネット証券 4 社を手数料・ツール・NISA 対応で比較。</p>
-        </a>
-        <a href="/blog/nisa-broker-selection" class="card">
-          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">株 (NISA)</div>
-          <div class="font-semibold mb-1">NISA で非課税で始めたい方</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">年間 240 万円の成長投資枠で、売却益がまるごと非課税になる使い方。</p>
-        </a>
-        <a href="/blog/fx-broker-small-lot" class="card">
-          <div class="text-xs text-[color:var(--color-brand-strong)] font-semibold mb-1">FX</div>
-          <div class="font-semibold mb-1">1,000 通貨から始める FX</div>
-          <p class="text-sm text-[color:var(--color-muted)] m-0">月数百円の動きから練習できる、少額対応の FX 口座をまとめました。</p>
-        </a>
-      </div>
-      <p class="mt-3 text-xs text-[color:var(--color-muted)]">
-        口座開設はまだ先、という方は、下記の待ちリストにご登録いただくと配信開始時にお知らせします。
-      </p>
-    </section>
 
     <section class="section" id="waitlist">
       <h2>検証ログの配信を受け取る (待ちリスト)</h2>
