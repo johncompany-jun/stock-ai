@@ -41,14 +41,13 @@ import {
   type StocksIndexData,
   type StocksMonthlyRow,
   type StocksPick,
+  type StocksYearly,
 } from "./stocks";
 import {
   PICKS_PER_PAGE,
-  renderPicksIndex,
-  type PicksAgg,
-  type PicksIndexData,
+  renderStocksHistory,
+  type PicksHistoryData,
   type PicksRecord,
-  type PicksYearly,
 } from "./picks";
 
 type Bindings = {
@@ -273,7 +272,21 @@ app.get("/stocks/", async (c) => {
     .leftJoin(stocks, eq(stocks.code, patternPicks.code))
     .where(eq(patternPicks.patterns, strategy))
     .orderBy(desc(patternPicks.runDate))
-    .limit(50)) as StocksHistoryRow[];
+    .limit(30)) as StocksHistoryRow[];
+
+  const yearly = (await c.env.DB.prepare(
+    `SELECT CAST(run_date / 10000 AS INTEGER) AS year,
+            COUNT(*) AS n,
+            ROUND(100.0 * SUM(CASE WHEN return_30d_pct > 0 THEN 1 ELSE 0 END)
+                  / NULLIF(SUM(CASE WHEN return_30d_pct IS NOT NULL THEN 1 ELSE 0 END), 0), 2) AS wr30d,
+            ROUND(AVG(return_30d_pct), 3) AS avg30d
+     FROM pattern_picks
+     WHERE patterns = ?
+     GROUP BY year
+     ORDER BY year DESC`,
+  )
+    .bind(strategy)
+    .all()).results as unknown as StocksYearly[];
 
   const monthlyRows = ((await c.env.DB.prepare(
     `WITH pp AS (
@@ -305,6 +318,7 @@ app.get("/stocks/", async (c) => {
     latestDate,
     today: todayEnriched,
     agg: agg ?? null,
+    yearly,
     history,
     monthly: monthlyRows,
     currentMonth,
@@ -314,39 +328,22 @@ app.get("/stocks/", async (c) => {
   return htmlResponse(renderStocksIndex(data));
 });
 
-const renderPicksPage = async (c: Context<{ Bindings: Bindings }>, page: number) => {
+const renderStocksHistoryPage = async (
+  c: Context<{ Bindings: Bindings }>,
+  page: number,
+) => {
   const db = drizzle(c.env.DB);
+  const strategy = "range_oscillator_buy";
 
   const [totalRow] = (await db
     .select({ n: sql<number>`COUNT(*)` })
-    .from(patternPicks)) as Array<{ n: number }>;
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, strategy))) as Array<{ n: number }>;
   const total = totalRow?.n ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PICKS_PER_PAGE));
   if (page < 1 || page > totalPages) {
     return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
   }
-
-  const [agg] = (await db
-    .select({
-      n: sql<number>`COUNT(*)`,
-      n30d: sql<number>`SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END)`,
-      wr30d: sql<number>`ROUND(100.0 * SUM(CASE WHEN ${patternPicks.return30dPct} > 0 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN ${patternPicks.return30dPct} IS NOT NULL THEN 1 ELSE 0 END), 0), 2)`,
-      avg30d: sql<number>`ROUND(AVG(${patternPicks.return30dPct}), 3)`,
-      firstDate: sql<number>`MIN(${patternPicks.runDate})`,
-      lastDate: sql<number>`MAX(${patternPicks.runDate})`,
-    })
-    .from(patternPicks)) as Array<PicksAgg>;
-
-  const yearly = (await c.env.DB.prepare(
-    `SELECT CAST(run_date / 10000 AS INTEGER) AS year,
-            COUNT(*) AS n,
-            ROUND(100.0 * SUM(CASE WHEN return_30d_pct > 0 THEN 1 ELSE 0 END)
-                  / NULLIF(SUM(CASE WHEN return_30d_pct IS NOT NULL THEN 1 ELSE 0 END), 0), 2) AS wr30d,
-            ROUND(AVG(return_30d_pct), 3) AS avg30d
-     FROM pattern_picks
-     GROUP BY year
-     ORDER BY year DESC`,
-  ).all()).results as unknown as PicksYearly[];
 
   const offset = (page - 1) * PICKS_PER_PAGE;
   const records = (await db
@@ -362,29 +359,33 @@ const renderPicksPage = async (c: Context<{ Bindings: Bindings }>, page: number)
     })
     .from(patternPicks)
     .leftJoin(stocks, eq(stocks.code, patternPicks.code))
+    .where(eq(patternPicks.patterns, strategy))
     .orderBy(desc(patternPicks.runDate), patternPicks.code)
     .limit(PICKS_PER_PAGE)
     .offset(offset)) as PicksRecord[];
 
-  const data: PicksIndexData = {
-    agg: agg ?? null,
-    yearly,
-    records,
-    page,
-    totalPages,
-    total,
-  };
-  return htmlResponse(renderPicksIndex(data));
+  const data: PicksHistoryData = { records, page, totalPages, total };
+  return htmlResponse(renderStocksHistory(data));
 };
 
-app.get("/picks", (c) => c.redirect("/picks/", 301));
-app.get("/picks/", (c) => renderPicksPage(c, 1));
-app.get("/picks/page/:page", (c) => {
+app.get("/stocks/history", (c) => c.redirect("/stocks/history/", 301));
+app.get("/stocks/history/", (c) => renderStocksHistoryPage(c, 1));
+app.get("/stocks/history/page/:page", (c) => {
   const page = Number(c.req.param("page"));
   if (!Number.isInteger(page) || page < 1) {
     return htmlResponse("<h1>404</h1><p>ページが見つかりません。</p>", 404);
   }
-  return renderPicksPage(c, page);
+  return renderStocksHistoryPage(c, page);
+});
+
+// 旧 /picks/ は /stocks/ 系に統合済み。301 で誘導する。
+app.get("/picks", (c) => c.redirect("/stocks/", 301));
+app.get("/picks/", (c) => c.redirect("/stocks/", 301));
+app.get("/picks/page/:page", (c) => {
+  const page = Number(c.req.param("page"));
+  const target =
+    Number.isInteger(page) && page > 1 ? `/stocks/history/page/${page}` : "/stocks/history/";
+  return c.redirect(target, 301);
 });
 
 const renderFxIndexPage = async (
@@ -760,9 +761,19 @@ app.get("/sitemap.xml", async (c) => {
     { loc: "https://stock-ai.uk/blog/" },
     { loc: "https://stock-ai.uk/fx/" },
     { loc: "https://stock-ai.uk/stocks/" },
-    { loc: "https://stock-ai.uk/picks/" },
+    { loc: "https://stock-ai.uk/stocks/history/" },
     { loc: "https://stock-ai.uk/contact" },
   ];
+  const [totalRow] = (await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(patternPicks)
+    .where(eq(patternPicks.patterns, "range_oscillator_buy"))) as Array<{
+    n: number;
+  }>;
+  const historyPages = Math.max(1, Math.ceil((totalRow?.n ?? 0) / PICKS_PER_PAGE));
+  for (let p = 2; p <= historyPages; p++) {
+    urls.push({ loc: `https://stock-ai.uk/stocks/history/page/${p}` });
+  }
   for (const catSlug of listCategorySlugs()) {
     urls.push({ loc: `https://stock-ai.uk/blog/category/${catSlug}` });
     const pages = categoryPageCount(catSlug);

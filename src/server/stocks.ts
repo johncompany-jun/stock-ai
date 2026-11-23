@@ -34,10 +34,18 @@ export type StocksAgg = {
   lastDate: number | null;
 };
 
+export type StocksYearly = {
+  year: number;
+  n: number;
+  wr30d: number | null;
+  avg30d: number | null;
+};
+
 export type StocksIndexData = {
   latestDate: number | null;
   today: StocksPick[];
   agg: StocksAgg | null;
+  yearly: StocksYearly[];
   history: StocksHistoryRow[];
   monthly: StocksMonthlyRow[];
   currentMonth: number;
@@ -58,7 +66,19 @@ const pctFmt = (v: number | null, digits = 2): string =>
   v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
 
 export const renderStocksIndex = (data: StocksIndexData): string => {
-  const { latestDate, today, agg, history, monthly, currentMonth, currentMonthStat } = data;
+  const { latestDate, today, agg, yearly, history, monthly, currentMonth, currentMonthStat } = data;
+
+  const yearlyRows = yearly
+    .map(
+      (y) => `
+      <tr>
+        <td class="p-2 font-mono">${y.year}</td>
+        <td class="p-2 font-mono text-xs">${y.n.toLocaleString("ja-JP")}</td>
+        <td class="p-2 font-mono text-xs ${pctCls((y.wr30d ?? 50) - 50)}">${y.wr30d != null ? `${y.wr30d.toFixed(2)}%` : "—"}</td>
+        <td class="p-2 font-mono text-xs ${pctCls(y.avg30d)}">${pctFmt(y.avg30d)}</td>
+      </tr>`,
+    )
+    .join("");
 
   const todayItems = today
     .map(
@@ -104,7 +124,7 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
   return renderLayout({
     title: "日本株 レンジサイクル検証ログ — stock-ai",
     description:
-      "東証スタンダード/グロース/プライムから、レンジサイクル戦略 (3M安値付近での仕込み) に合致する銘柄を日次検出。14ヶ月1,235件のバックテストで30日勝率47.88%・平均+1.05%。仮想検証ログを公開。",
+      "東証スタンダード/グロース/プライムから、3 ヶ月安値付近の仕込みパターンに合致する銘柄を日次検出。6 年 7,067 件のバックテストで 30 日勝率 49.6% / 平均 +0.91%。今日のピック・年別・月別・全履歴を公開。",
     path: "/stocks/",
     content: `
     <section class="hero">
@@ -118,35 +138,10 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
     </section>
 
     ${
-      agg
-        ? `
-    <section class="section">
-      <h2>通算成績 (30日ホライズン)</h2>
-      <div class="stat-grid">
-        <div class="card">
-          <span class="label block text-xs text-[color:var(--color-muted)] mb-1 font-semibold">勝率</span>
-          <span class="value ${agg.wr30d != null && agg.wr30d >= 50 ? "pos" : agg.wr30d != null && agg.wr30d < 50 ? "neg" : ""} font-mono text-2xl font-bold">${agg.wr30d != null ? `${agg.wr30d.toFixed(2)}%` : "—"}</span>
-          <div class="text-xs text-[color:var(--color-muted-soft)] mt-1">n = ${agg.n30d}</div>
-        </div>
-        <div class="card">
-          <span class="label block text-xs text-[color:var(--color-muted)] mb-1 font-semibold">平均リターン</span>
-          <span class="value ${pctCls(agg.avg30d)} font-mono text-2xl font-bold">${pctFmt(agg.avg30d)}</span>
-          <div class="text-xs text-[color:var(--color-muted-soft)] mt-1">集計期間 ${agg.firstDate ? htmlEscape(formatYmd(agg.firstDate)) : "—"} 〜 ${agg.lastDate ? htmlEscape(formatYmd(agg.lastDate)) : "—"}</div>
-        </div>
-      </div>
-      <p class="text-sm mt-3 text-[color:var(--color-muted)]">
-        勝率は50%割れでも、平均リターンがプラスなら期待値はプラス (農家哲学: ホームランではなくヒット)。
-        詳しい読み方は <a href="/blog/range-cycle-backtest-1235">バックテスト記事</a> をご覧ください。
-      </p>
-    </section>`
-        : ""
-    }
-
-    ${
       latestDate && today.length > 0
         ? `
     <section class="section">
-      <h2>最新のピック (${htmlEscape(formatYmd(latestDate))})</h2>
+      <h2>今日のピック (${htmlEscape(formatYmd(latestDate))})</h2>
       <div class="card">
         <div class="overflow-x-auto">
           <table class="w-full text-sm border-collapse">
@@ -174,10 +169,65 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
     }
 
     ${
+      agg
+        ? `
+    <section class="section">
+      <h2>通算成績 (30 日ホライズン)</h2>
+      <div class="grid gap-3 sm:grid-cols-4">
+        <div class="card">
+          <div class="text-xs text-[color:var(--color-muted-soft)]">総件数</div>
+          <div class="text-2xl font-mono font-semibold">${agg.n.toLocaleString("ja-JP")}</div>
+          <div class="text-xs text-[color:var(--color-muted)]">${agg.firstDate ? formatYmd(agg.firstDate) : "—"} 〜 ${agg.lastDate ? formatYmd(agg.lastDate) : "—"}</div>
+        </div>
+        <div class="card">
+          <div class="text-xs text-[color:var(--color-muted-soft)]">30 日後 判定済み</div>
+          <div class="text-2xl font-mono font-semibold">${agg.n30d.toLocaleString("ja-JP")}</div>
+          <div class="text-xs text-[color:var(--color-muted)]">件</div>
+        </div>
+        <div class="card">
+          <div class="text-xs text-[color:var(--color-muted-soft)]">勝率</div>
+          <div class="text-2xl font-mono font-semibold ${agg.wr30d != null && agg.wr30d >= 50 ? "pos" : agg.wr30d != null ? "neg" : ""}">${agg.wr30d != null ? `${agg.wr30d.toFixed(2)}%` : "—"}</div>
+        </div>
+        <div class="card">
+          <div class="text-xs text-[color:var(--color-muted-soft)]">平均リターン</div>
+          <div class="text-2xl font-mono font-semibold ${pctCls(agg.avg30d)}">${pctFmt(agg.avg30d)}</div>
+        </div>
+      </div>
+      <p class="text-sm mt-3 text-[color:var(--color-muted)]">
+        勝率は 50% 割れでも、平均リターンがプラスなら期待値はプラス (農家哲学: ホームランではなくヒット)。
+        詳しい読み方は <a href="/blog/range-cycle-backtest-1235">バックテスト記事</a> をご覧ください。
+      </p>
+    </section>`
+        : ""
+    }
+
+    ${
+      yearly.length > 0
+        ? `
+    <section class="section">
+      <h2>年別の勝率</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-[color:var(--color-muted-soft)] border-b">
+              <th class="p-2">年</th>
+              <th class="p-2">件数</th>
+              <th class="p-2">30 日勝率</th>
+              <th class="p-2">30 日平均</th>
+            </tr>
+          </thead>
+          <tbody>${yearlyRows}</tbody>
+        </table>
+      </div>
+    </section>`
+        : ""
+    }
+
+    ${
       monthly.length > 0
         ? `
     <section class="section">
-      <h2>月別 90日ホライズン</h2>
+      <h2>月別 90 日ホライズン</h2>
       <div class="card">
         ${currentMonthStat ? `<p class="text-sm mb-3">今月 (${monthNames[currentMonth]}) の過去実績: <strong>勝率 ${currentMonthStat.wr_90d.toFixed(1)}% / 平均 ${pctFmt(currentMonthStat.avg_90d)}</strong></p>` : ""}
         <div class="overflow-x-auto">
@@ -194,8 +244,8 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
           </table>
         </div>
         <p class="text-xs text-[color:var(--color-muted)] mt-3">
-          「3ヶ月レンジで仕込んで3ヶ月で収穫」の戦略に合わせて、
-          90日ホライズンで集計しています。詳細は <a href="/blog/stock-seasonality-september">季節性の記事</a>。
+          「3 ヶ月レンジで仕込んで 3 ヶ月で収穫」の戦略に合わせて、
+          90 日ホライズンで集計しています。詳細は <a href="/blog/stock-seasonality-september">季節性の記事</a>。
         </p>
       </div>
     </section>`
@@ -206,10 +256,11 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
       history.length > 0
         ? `
     <section class="section">
-      <h2>直近のピックと答え合わせ (30日後)</h2>
+      <h2>直近のピックと答え合わせ (30 日後)</h2>
       <ul class="row-list">${historyItems}</ul>
-      <p class="text-xs text-[color:var(--color-muted)] mt-3">
-        各シグナルの 30日後の実リターン結果。「判定前」は 30 営業日経過前です。
+      <p class="text-sm mt-3"><a href="/stocks/history/">全ピック履歴を見る →</a></p>
+      <p class="text-xs text-[color:var(--color-muted)] mt-2">
+        各シグナルの 30 日後の実リターン結果。「判定前」は 30 営業日経過前です。
       </p>
     </section>`
         : ""
@@ -219,12 +270,12 @@ export const renderStocksIndex = (data: StocksIndexData): string => {
       <h2>戦略の説明</h2>
       <div class="card-soft">
         <ul class="list-disc pl-5 space-y-1 text-sm">
-          <li><strong>対象</strong>: 東証スタンダード / グロース / プライムの 100-1,000 円銘柄 (10万円以内で 100 株買えるライン)</li>
-          <li><strong>検出パターン</strong>: oversold_reversal / pullback_to_ma / gap_down_reversal</li>
+          <li><strong>対象</strong>: 東証スタンダード / グロース / プライムの 100 - 1,000 円銘柄 (10 万円以内で 100 株買えるライン)</li>
+          <li><strong>検出パターン</strong>: 3 ヶ月安値付近 + 1 年のレンジ横ばい (<code>range_oscillator_buy</code>)</li>
           <li><strong>評価</strong>: 30 日後の価格リターン、勝率と平均で期待値を測定</li>
           <li><strong>原則</strong>: 単発の予測ではなく、過去同一パターンの統計で「N 回中 M 回勝ち」を提示</li>
         </ul>
-        <p class="text-sm mt-3">詳しくは <a href="/blog/range-cycle-backtest-1235">1,235件バックテスト記事</a> と <a href="/blog/stock-model-collapse-2026-10">モデル崩壊の記録</a> をご覧ください。</p>
+        <p class="text-sm mt-3">詳しくは <a href="/blog/range-cycle-backtest-1235">7,067 件バックテスト記事</a> と <a href="/blog/stock-model-collapse-2026-10">モデル崩壊の記録</a> をご覧ください。</p>
       </div>
     </section>
 `,

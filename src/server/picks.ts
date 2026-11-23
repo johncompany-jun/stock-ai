@@ -11,25 +11,7 @@ export type PicksRecord = {
   return30dPct: number | null;
 };
 
-export type PicksAgg = {
-  n: number;
-  n30d: number;
-  wr30d: number | null;
-  avg30d: number | null;
-  firstDate: number | null;
-  lastDate: number | null;
-};
-
-export type PicksYearly = {
-  year: number;
-  n: number;
-  wr30d: number | null;
-  avg30d: number | null;
-};
-
-export type PicksIndexData = {
-  agg: PicksAgg | null;
-  yearly: PicksYearly[];
+export type PicksHistoryData = {
   records: PicksRecord[];
   page: number;
   totalPages: number;
@@ -69,44 +51,8 @@ const patternLabel = (patterns: string): string =>
     )
     .join(" + ");
 
-export const renderPicksIndex = (data: PicksIndexData): string => {
-  const { agg, yearly, records, page, totalPages, total } = data;
-
-  const aggTile = agg
-    ? `
-    <div class="grid gap-3 sm:grid-cols-4">
-      <div class="card">
-        <div class="text-xs text-[color:var(--color-muted-soft)]">総件数</div>
-        <div class="text-2xl font-mono font-semibold">${agg.n.toLocaleString("ja-JP")}</div>
-        <div class="text-xs text-[color:var(--color-muted)]">${agg.firstDate ? formatYmd(agg.firstDate) : "—"} 〜 ${agg.lastDate ? formatYmd(agg.lastDate) : "—"}</div>
-      </div>
-      <div class="card">
-        <div class="text-xs text-[color:var(--color-muted-soft)]">30 日後 判定済み</div>
-        <div class="text-2xl font-mono font-semibold">${(agg.n30d ?? 0).toLocaleString("ja-JP")}</div>
-        <div class="text-xs text-[color:var(--color-muted)]">件</div>
-      </div>
-      <div class="card">
-        <div class="text-xs text-[color:var(--color-muted-soft)]">30 日後 勝率</div>
-        <div class="text-2xl font-mono font-semibold ${pctCls((agg.wr30d ?? 50) - 50)}">${agg.wr30d != null ? `${agg.wr30d.toFixed(2)}%` : "—"}</div>
-      </div>
-      <div class="card">
-        <div class="text-xs text-[color:var(--color-muted-soft)]">30 日後 平均リターン</div>
-        <div class="text-2xl font-mono font-semibold ${pctCls(agg.avg30d)}">${pctFmt(agg.avg30d, 2)}</div>
-      </div>
-    </div>`
-    : "<p>集計データなし</p>";
-
-  const yearlyRows = yearly
-    .map(
-      (y) => `
-      <tr>
-        <td class="p-2 font-mono">${y.year}</td>
-        <td class="p-2 font-mono text-xs">${y.n.toLocaleString("ja-JP")}</td>
-        <td class="p-2 font-mono text-xs ${pctCls((y.wr30d ?? 50) - 50)}">${y.wr30d != null ? `${y.wr30d.toFixed(2)}%` : "—"}</td>
-        <td class="p-2 font-mono text-xs ${pctCls(y.avg30d)}">${pctFmt(y.avg30d, 2)}</td>
-      </tr>`,
-    )
-    .join("");
+export const renderStocksHistory = (data: PicksHistoryData): string => {
+  const { records, page, totalPages, total } = data;
 
   const recordRows = records
     .map(
@@ -124,7 +70,8 @@ export const renderPicksIndex = (data: PicksIndexData): string => {
     )
     .join("");
 
-  const linkTo = (n: number): string => (n === 1 ? "/picks/" : `/picks/page/${n}`);
+  const linkTo = (n: number): string =>
+    n === 1 ? "/stocks/history/" : `/stocks/history/page/${n}`;
   const prev =
     page > 1
       ? `<a href="${linkTo(page - 1)}" class="btn btn-outline text-sm" rel="prev">← 前のページ</a>`
@@ -139,38 +86,17 @@ export const renderPicksIndex = (data: PicksIndexData): string => {
       : `<p class="text-sm text-[color:var(--color-muted)] mt-3">全 ${total.toLocaleString("ja-JP")} 件</p>`;
 
   return renderLayout({
-    title: "推し実績 — stock-ai",
+    title: `ピック履歴 (${page} / ${totalPages}) — stock-ai`,
     description:
-      "stock-ai がピックした銘柄の過去実績を全件公開。6 年分 7,000 件以上のバックテストと実運用シグナルで、30 日後の勝率・平均リターンがどう推移しているかを記録。",
-    path: page === 1 ? "/picks/" : `/picks/page/${page}`,
+      "日本株 レンジサイクル戦略でピックした全銘柄の履歴。日付・コード・エントリー価格・5/15/30 日後のリターンを全件公開。",
+    path: page === 1 ? "/stocks/history/" : `/stocks/history/page/${page}`,
     content: `
     <section class="hero">
-      <h1>推し実績</h1>
+      <h1>ピック履歴</h1>
       <p class="lead">レンジサイクル戦略でピックした銘柄の、過去全件の実績記録です。</p>
+      <p class="text-sm mt-3"><a href="/stocks/">← 検証ログ (今日のピック / 通算成績) に戻る</a></p>
     </section>
     <section class="section">
-      <h2>サマリー</h2>
-      ${aggTile}
-    </section>
-    <section class="section">
-      <h2>年別の勝率</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left text-xs text-[color:var(--color-muted-soft)] border-b">
-              <th class="p-2">年</th>
-              <th class="p-2">件数</th>
-              <th class="p-2">30 日勝率</th>
-              <th class="p-2">30 日平均</th>
-            </tr>
-          </thead>
-          <tbody>${yearlyRows}</tbody>
-        </table>
-      </div>
-      <p class="text-xs text-[color:var(--color-muted)] mt-2">※ 勝率は「エントリーから 30 営業日後に陽線で終わった割合」。平均はシンプル平均。</p>
-    </section>
-    <section class="section">
-      <h2>ピック履歴</h2>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -189,13 +115,9 @@ export const renderPicksIndex = (data: PicksIndexData): string => {
         </table>
       </div>
       ${nav}
-    </section>
-    <section class="section">
-      <p class="text-sm text-[color:var(--color-muted)]">
-        戦略の全体像は <a href="/blog/range-cycle-backtest-1235">7,067 件バックテスト記事</a> を、
-        今日のピックは <a href="/stocks/">/stocks/</a> をご覧ください。
+      <p class="text-xs text-[color:var(--color-muted-soft)] mt-3">
+        本ページは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。
       </p>
-      <p class="text-xs text-[color:var(--color-muted-soft)] mt-2">本ページは過去データにもとづく分析結果の共有であり、売買を勧めるものではありません。</p>
     </section>
 `,
   });
