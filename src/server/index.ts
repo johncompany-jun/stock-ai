@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { candles, contacts, fxPredictions, patternPicks, stockTrades, stocks, virtualPortfolioTrades, waitlist, watchlist } from "./db/schema";
 import {
   clearCookie,
@@ -270,9 +270,25 @@ app.get("/stocks/", async (c) => {
     })
     .from(patternPicks)
     .leftJoin(stocks, eq(stocks.code, patternPicks.code))
-    .where(eq(patternPicks.patterns, strategy))
+    .where(
+      and(
+        eq(patternPicks.patterns, strategy),
+        isNotNull(patternPicks.return30dPct),
+      ),
+    )
     .orderBy(desc(patternPicks.runDate))
     .limit(30)) as StocksHistoryRow[];
+
+  const [pendingRow] = (await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(patternPicks)
+    .where(
+      and(
+        eq(patternPicks.patterns, strategy),
+        isNull(patternPicks.return30dPct),
+      ),
+    )) as Array<{ n: number }>;
+  const pendingCount = pendingRow?.n ?? 0;
 
   const yearly = (await c.env.DB.prepare(
     `SELECT CAST(run_date / 10000 AS INTEGER) AS year,
@@ -320,6 +336,7 @@ app.get("/stocks/", async (c) => {
     agg: agg ?? null,
     yearly,
     history,
+    pendingCount,
     monthly: monthlyRows,
     currentMonth,
     currentMonthStat,
